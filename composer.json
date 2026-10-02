@@ -1,0 +1,44 @@
+{
+    "name": "ismailnakkar/laravel-listing",
+    "description": "Easy, typed querying and filtering for Blade list pages: declare filters and sorts once, and no query string ever bounces the page.",
+    "keywords": ["laravel", "listing", "filter", "sort", "search", "pagination", "blade"],
+    "homepage": "https://github.com/ismailnakkar/laravel-listing",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Ismail Nakkar",
+            "email": "juge.steam@gmail.com"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "laravel/framework": "^13.0"
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.12",
+        "laravel/pint": "^1.27",
+        "orchestra/testbench": "^11.0",
+        "phpunit/phpunit": "^12.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Listing\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Listing\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/phpunit",
+        "check": [
+            "vendor/bin/pint --test",
+            "vendor/bin/phpstan analyse --no-progress --memory-limit=1G",
+            "vendor/bin/phpunit"
+        ]
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

@@ -1,0 +1,97 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sqlite:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.4', '8.5']
+        deps: [prefer-lowest, prefer-stable]
+
+    name: SQLite · PHP ${{ matrix.php }} · ${{ matrix.deps }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      # The lowest leg installs the declared Laravel 13.0 floor, which has security advisories; malware and
+      # abandoned-package blocking stay on.
+      - run: composer update --${{ matrix.deps }} --prefer-dist --no-interaction --no-progress
+        env:
+          COMPOSER_POLICY_ADVISORIES_BLOCK: ${{ matrix.deps == 'prefer-lowest' && '0' || '1' }}
+
+      - run: composer check
+
+  database:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - connection: pgsql
+            image: postgres:18
+            port: 5432
+            username: postgres
+            health: pg_isready
+          - connection: mysql
+            image: mysql:8.4
+            port: 3306
+            username: root
+            health: mysqladmin ping -h 127.0.0.1 -psecret
+
+    name: ${{ matrix.connection }} · PHP 8.5 · prefer-stable
+
+    services:
+      database:
+        image: ${{ matrix.image }}
+        env:
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: listing
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: listing
+        ports:
+          - ${{ matrix.port }}:${{ matrix.port }}
+        options: >-
+          --health-cmd "${{ matrix.health }}"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: pdo_pgsql, pdo_mysql
+          coverage: none
+
+      - run: composer update --prefer-stable --prefer-dist --no-interaction --no-progress
+
+      - run: vendor/bin/phpunit
+        env:
+          DB_CONNECTION: ${{ matrix.connection }}
+          DB_HOST: 127.0.0.1
+          DB_PORT: ${{ matrix.port }}
+          DB_DATABASE: listing
+          DB_USERNAME: ${{ matrix.username }}
+          DB_PASSWORD: secret
