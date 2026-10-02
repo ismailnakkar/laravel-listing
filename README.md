@@ -36,7 +36,7 @@ final class OrderController
             ->search('q', ['orders.reference', 'customers.email'])
             ->date('from', 'orders.created_at', '>=')
             ->date('to', 'orders.created_at', '<=')
-            ->sorts('reference', 'total', 'created_at', customer: 'customers.name')
+            ->sorts('reference', 'total', 'created_at', customer: 'customer_name')
             ->defaultSort('-created_at');
 
         return view('orders.index', ['orders' => $listing->paginate(), 'listing' => $listing]);
@@ -47,7 +47,8 @@ final class OrderController
 `?status=shipped&paid=0&q=lamp&from=2026-10-01&sort=-total&page=2` is the second page of unpaid, shipped orders
 matching "lamp" since October 1st, largest first. `paginate()` takes a page size, else the model's `$perPage`. Its
 links keep the query string. A `?page` that is not a positive whole number, or so large that its offset would overflow,
-shows the first page; a page past the last one is empty, as in Laravel.
+shows the first page; a page past the last one is empty, as in Laravel. For large tables, `simplePaginate()` and
+`cursorPaginate()` skip the COUNT; see [Paging](#paging).
 
 ### Filters
 
@@ -110,8 +111,9 @@ From and to are days on the column's own clock:
 `sorts()` names what `?sort=` may use: `?sort=total` is ascending, `?sort=-total` descending.
 
 - A positional name is a column of the listed model's table.
-- A named argument gives a joined column or a select alias a name of its own: `customer: 'customers.name'`,
-  `orders: 'orders_count'`.
+- A named argument gives a select alias or another column a name of its own: `customer: 'customer_name'`,
+  `orders: 'orders_count'`. Name a joined column by its select alias, as here: `cursorPaginate()` reads each row's
+  sort value by that name, so a joined column named in full (`customers.name`) pages wrong there.
 - Every call adds names, so a sort can depend on the user: `->when($user->isAdmin(), fn (Listing $l) => $l->sorts('margin'))`.
 
 How the order is chosen:
@@ -219,36 +221,37 @@ To make each header one line, save this as `resources/views/components/sort-head
 <x-sort-header :listing="$listing" column="total">Total</x-sort-header>
 ```
 
-## Paging it yourself
+## Paging
 
-`apply()` is the filtered, sorted query without paging. Use it for:
+| Method | Gives | Use it for |
+| --- | --- | --- |
+| `paginate($perPage = null)` | a page with a total and page links | most screens |
+| `simplePaginate($perPage = null)` | previous and next only, with no COUNT query | a table too large to count |
+| `cursorPaginate($perPage = null)` | previous and next by cursor, with no COUNT and no OFFSET | a very large table |
 
-- an export
-- `simplePaginate()` or `cursorPaginate()`
-- a second paginator
-- a query run under a statement timeout
+Each takes a page size, else the model's `$perPage`, and its links keep the query string.
 
-A relation stays a relation.
+- **`?page`** reads like an id. One that is not a positive whole number, or so large its offset would overflow, shows
+  the first page. Laravel's own resolver takes `?page=9223372036854775807`, a 500 on PHP 8.5.
+- **`?cursor`** comes from the query string like every other parameter. Laravel throws for a cursor from another sort
+  order, such as a bookmark from before a deploy that changed the order, and for one holding a null. PostgreSQL and
+  SQL Server also reject a hand-edited value the column cannot hold. `cursorPaginate()` shows the first page for each;
+  an error that is not the cursor's throws again from the retry.
+- **NULL sort values.** As in Laravel, a page that ends on a NULL sort value links back to the first page, and in the
+  other direction the NULL rows never show. Give a cursor screen NOT NULL sort columns; `timestamps()` columns are
+  nullable.
+- **A joined column** pages by its select alias (see [Sorts](#sorts)).
+- **A statement timeout** goes around the call: set it, call `cursorPaginate()`, then restore it.
 
-Laravel's own page resolver accepts `?page=9223372036854775807`, a 500 on PHP 8.5, so pass the page yourself:
+### Without paging
 
-```php
-$perPage = 25;
-$page = filter_var($request->query('page'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => intdiv(PHP_INT_MAX, $perPage)]]) ?: 1;
+`apply()` is the filtered, sorted query without paging:
 
-$rows = $listing->apply()->simplePaginate($perPage, ['*'], 'page', $page)->withQueryString();
-```
+- an export, with `->lazy()`
+- a count, a sum or a second query on the same filters
 
-A garbage `?cursor` gives the first page, but Laravel throws for a well-formed one from another sort order, and for one
-forged to hold a null. Show the first page instead; an error that is not the cursor's throws again from the retry:
-
-```php
-try {
-    $links = $listing->apply()->cursorPaginate(25)->withQueryString();
-} catch (\UnexpectedValueException|\InvalidArgumentException) {
-    $links = $listing->apply()->cursorPaginate(25, ['*'], 'cursor', '')->withQueryString();
-}
-```
+A relation stays a relation. Page through the three methods above rather than `apply()`: they carry the page cap and
+the cursor guard.
 
 ## Reusing a listing
 

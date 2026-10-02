@@ -102,8 +102,10 @@ public function index(Request $request)
 | `date(string $key, string\|Closure\|null $column = null, '='\|'>='\|'<=' $operator = '=')` | a real day, `Y-m-d`, from 1753-01-01 to 9999-12-31 | whole days; see section 3 |
 | `sorts(string ...$columns): self` | — | Adds names that `?sort=` may use. Every call adds to them, and a name given again takes its new column. A positional name is a column of the model's table. A named argument is an alias for any other column or a select alias (`customer: 'customers.name'`). |
 | `defaultSort(string $sort): self` | — | `'-created_at'`. Until it is called, the default is the model's key, descending. |
-| `apply(): Builder` | — | A filtered and sorted **clone** of what `for()` was given, unpaged. A query gives an Eloquent builder; a relation gives the relation itself, so `get()` and `simplePaginate()` still select its pivot columns. Use it for an export, `simplePaginate()`, `cursorPaginate()`, a second paginator, or a query run under a statement timeout. When you page it yourself, see section 2. |
+| `apply(): Builder` | — | A filtered and sorted **clone** of what `for()` was given, unpaged. A query gives an Eloquent builder; a relation gives the relation itself, so `get()` and `simplePaginate()` still select its pivot columns. Use it for an export or a second query on the same filters; page through the three paginate methods, which carry the page cap and the cursor guard. |
 | `paginate(?int $perPage = null): LengthAwarePaginator` | `?page` | The filtered, sorted page. The page size is the argument, else (for `null` or `0`, as in Laravel) the model's `$perPage`. A page above the cap reads as absent, and the links keep the query string. |
+| `simplePaginate(?int $perPage = null): Paginator` | `?page` | As `paginate()`, without a total, so with no COUNT query. Added for 0.2 (2026-10-02). |
+| `cursorPaginate(?int $perPage = null): CursorPaginator` | `?cursor` | The page by cursor, with no COUNT and no OFFSET. The cursor comes from the query string; one from another sort order, one holding a null, or one holding a value the column cannot hold (SQLSTATE class 22 on PostgreSQL and SQL Server) shows the first page, and an error that is not the cursor's throws again from the retry. A joined sort column pages only by its select alias, and a page ending on a NULL sort value links back to the first page (Laravel). Added for 0.2 (2026-10-02). |
 
 General rules for the filter methods:
 
@@ -185,7 +187,9 @@ src/
 - **Reuse:** a static method or private method that returns the configured `Listing`. The README documents it; there
   is no code for it.
 - **Cursor pagination and statement timeouts** (the exe-laravel link lists, through its `LinkSearch` service): these
-  go through `apply()`. `sortUrl()` drops `cursor`. Section 2 lists what the app guards itself.
+  use `cursorPaginate()`, called inside the app's statement timeout. `sortUrl()` drops `cursor`. Both were first
+  guarded in the app through `apply()`; the exe migration found the copy-paste guard wrong twice, so 0.2 moved the page
+  cap and the cursor guard into `simplePaginate()` and `cursorPaginate()`.
 - **Carried over:**
   - A header starts a new column descending.
   - `flag()` reads `0` as `false`, because "No" is an answer, not an absent filter.
@@ -231,6 +235,7 @@ page returns 200 with the default list:
 - impossible or out-of-range dates
 - a garbage or stale `?sort`
 - a huge `?page`
+- a garbage, foreign or forged `?cursor`, on `cursorPaginate()`
 
 **Fails loudly, on purpose, for developer mistakes:**
 
@@ -253,15 +258,11 @@ page returns 200 with the default list:
 - A closure that parses its value further must not hand the database an impossible value.
 - Authorization.
 - `sort`, `page` and `cursor` are reserved query-string names.
-- **Paging `apply()` yourself** (`simplePaginate()`, a second paginator, a custom page name). Laravel's own page
-  resolver is uncapped, so `?page=9223372036854775807` is a 500 on PHP 8.5. Pass the page as the fourth argument,
-  narrowed like an id with `intdiv(PHP_INT_MAX, $perPage)` as its max; the README shows the line.
-- **Cursor pagination through `apply()`.** A garbage `?cursor` decodes to `null` and gives the first page. But a
-  well-formed cursor that names other columns, from another sort order, makes Laravel's `Cursor::parameter()` throw
-  `UnexpectedValueException`, which is a 500, and a cursor forged to hold a null makes `where()` throw
-  `InvalidArgumentException` (found by the exe-laravel sweep, 2026-10-02). `sortUrl()` drops `cursor` so a header link
-  never does this. A bookmark or a hand-edited URL still can, so a cursor screen catches both and shows the first page;
-  the README shows how. A retry that is not about the cursor throws again.
+- **Paging `apply()` yourself** (a second paginator, a custom page name). Laravel's own page resolver is uncapped, so
+  `?page=9223372036854775807` is a 500 on PHP 8.5. A cursor is a 500 too when it comes from another sort order
+  (`UnexpectedValueException`), holds a null (`InvalidArgumentException`, found by the exe-laravel sweep) or holds a
+  value the column cannot hold (SQLSTATE class 22 on PostgreSQL and SQL Server). The three paginate methods guard
+  each of these; code that pages `apply()` itself has to repeat their guards.
 - Engine and driver quirks the package cannot see:
   - **PostgreSQL raises, instead of matching nothing, when a value does not fit the column's type.** An `id()` on an
     `integer` (not `bigInteger`) column needs `max: 2147483647`, and so does an `ids()`, where one value out of range fails
@@ -401,7 +402,7 @@ commands:
   - custom filters (closures)
   - the reuse pattern
   - `#[Authorize]`
-  - paging `apply()` yourself: the capped page line, and the cursor guard
+  - paging: `paginate()`, `simplePaginate()` and `cursorPaginate()`, and `apply()` without paging
   - engine notes:
     - SQL Server drivers
     - `utf8mb3`
@@ -453,7 +454,7 @@ who migrates it. The exe-laravel session stays out of the package and those file
 | `Like::contains($query, $columns, $term)` | `->search($key, $columns)` |
 | `request()->fullUrlWithQuery($sort->toggle('total'))`, `$sort->ariaSort('total')` | `$listing->sortUrl('total')`, `$listing->ariaSort('total')` |
 | `PER_PAGE` and `perPage()` | the model's `$perPage`, or `paginate(25)` |
-| cursor pagination over the query | `$listing->apply()->cursorPaginate(...)`, with the cursor guard (section 2) |
+| cursor pagination over the query | `$listing->cursorPaginate()` |
 
 ## Out of scope for this round
 
@@ -461,8 +462,6 @@ who migrates it. The exe-laravel session stays out of the package and those file
 - multi-column sort (`?sort=a,-b`)
 - a packaged Blade component
 - a standalone public LIKE helper; it can return later as a builder method if a screen needs one
-- a built-in `cursorPaginate()` or `simplePaginate()` on `Listing`; use `apply()`, as section 2 says, and add one if
-  migrating exe shows it is worth it
 - `uuid()` or `ulid()` filter methods; use a closure with `Str::isUuid()` or `Str::isUlid()`
 - `'>'` and `'<'` date operators, and a per-viewer timezone (a closure covers it)
 - anything API- or JSON:API-shaped

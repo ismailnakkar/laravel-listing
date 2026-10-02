@@ -10,11 +10,15 @@ use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Builder as Query;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\CursorPaginator;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Traits\Conditionable;
 use InvalidArgumentException;
 use LogicException;
+use UnexpectedValueException;
 
 /**
  * A Blade list page's query: the filters and sorts its query string may set, read leniently, so that no URL bounces
@@ -224,9 +228,47 @@ final class Listing
     {
         $query = $this->apply();
         $perPage = $perPage ?: $query->getModel()->getPerPage();
-        $page = Filter::positiveInt($this->request->query('page'), intdiv(PHP_INT_MAX, $perPage)) ?? 1;
 
-        return $query->paginate($perPage, ['*'], 'page', $page)->withQueryString();
+        return $query->paginate($perPage, ['*'], 'page', $this->page($perPage))->withQueryString();
+    }
+
+    /**
+     * The filtered, sorted page without a total, so with no COUNT query. The page size and `?page` read as in
+     * paginate().
+     *
+     * @return Paginator<int, TModel>
+     */
+    public function simplePaginate(?int $perPage = null): Paginator
+    {
+        $query = $this->apply();
+        $perPage = $perPage ?: $query->getModel()->getPerPage();
+
+        return $query->simplePaginate($perPage, ['*'], 'page', $this->page($perPage))->withQueryString();
+    }
+
+    /**
+     * The filtered, sorted page by cursor: no COUNT and no OFFSET, its links keeping the query string. `?cursor` comes
+     * from the query string like every other parameter. A cursor from another sort order, one holding a null, or one
+     * holding a value the column's type cannot hold (PostgreSQL and SQL Server raise SQLSTATE class 22) shows the first
+     * page; an error that is not the cursor's throws again from the retry. As in Laravel, a page ending on a NULL sort
+     * value links back to the first page, and a joined column pages only by its select alias.
+     *
+     * @return CursorPaginator<int, TModel>
+     */
+    public function cursorPaginate(?int $perPage = null): CursorPaginator
+    {
+        $perPage = $perPage ?: $this->query->getModel()->getPerPage();
+        $cursor = $this->request->query('cursor');
+
+        try {
+            return $this->apply()->cursorPaginate($perPage, ['*'], 'cursor', is_string($cursor) ? $cursor : '')->withQueryString();
+        } catch (UnexpectedValueException|InvalidArgumentException) {
+            // A cursor from another sort order, or one holding a null.
+        } catch (QueryException $e) {
+            throw_unless(str_starts_with((string)$e->getCode(), '22'), $e);
+        }
+
+        return $this->apply()->cursorPaginate($perPage, ['*'], 'cursor', '')->withQueryString();
     }
 
     /**
@@ -260,6 +302,12 @@ final class Listing
     private function column(string $key, string|Closure|null $column): string|Closure
     {
         return $column ?? $this->query->getModel()->qualifyColumn($key);
+    }
+
+    /** `?page` read like an id, up to the last page whose offset fits an int; anything else is the first page. */
+    private function page(int $perPage): int
+    {
+        return Filter::positiveInt($this->request->query('page'), intdiv(PHP_INT_MAX, $perPage)) ?? 1;
     }
 
     /** One filter per key: a second declaration is a mistake, and fails where the screen makes it. */

@@ -18,6 +18,8 @@ $request = Request::create('/');
 $products = Listing::for(Product::query(), $request)->text('name')->sorts('price');
 assertType('Listing\Listing<Listing\Tests\Fixtures\Product>', $products);
 assertType('Illuminate\Pagination\LengthAwarePaginator<int, Listing\Tests\Fixtures\Product>', $products->paginate());
+assertType('Illuminate\Pagination\Paginator<int, Listing\Tests\Fixtures\Product>', $products->simplePaginate());
+assertType('Illuminate\Pagination\CursorPaginator<int, Listing\Tests\Fixtures\Product>', $products->cursorPaginate());
 assertType('Listing\Tests\Fixtures\Product|null', $products->apply()->first());
 
 $members = Listing::for((new Team)->members(), $request)->text('role', 'member_team.role');
