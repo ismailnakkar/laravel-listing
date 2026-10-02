@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Listing\Tests;
 
 use Illuminate\Http\Request;
+use Illuminate\Pagination\Cursor;
+use InvalidArgumentException;
 use Listing\Listing;
 use Listing\Tests\Fixtures\Member;
 use Listing\Tests\Fixtures\Product;
@@ -75,8 +77,8 @@ final class PaginationTest extends TestCase
         $this->assertSame('editor', $page->getCollection()->first()?->pivot?->role);
     }
 
-    /** exe-laravel's link lists page by cursor through apply(); the README's guard catches a cursor from another order. */
-    public function test_apply_cursor_paginates_and_the_readme_guard_catches_a_foreign_cursor(): void
+    /** exe-laravel's link lists page by cursor through apply(); the README's guard turns a bad cursor into the first page. */
+    public function test_apply_cursor_paginates_and_the_readme_guard_catches_a_foreign_or_forged_cursor(): void
     {
         $this->seedProducts(7);
         $byPrice = fn (): Listing => $this->listing('sort=price')->sorts('price', 'name');
@@ -86,13 +88,22 @@ final class PaginationTest extends TestCase
         $this->assertSame(['P4', 'P7', 'P2'], $next->getCollection()->pluck('name')->all());
         $this->assertSame(['P3', 'P6', 'P1'], $byPrice()->apply()->cursorPaginate(3, ['*'], 'cursor', 'garbage')->getCollection()->pluck('name')->all());
 
-        $foreign = $this->listing('sort=name')->sorts('price', 'name')->apply()->cursorPaginate(3)->nextCursor()?->encode();
+        // The README's guard, as written there.
+        $guarded = function (?string $cursor) use ($byPrice): array {
+            try {
+                $links = $byPrice()->apply()->cursorPaginate(3, ['*'], 'cursor', $cursor);
+            } catch (UnexpectedValueException|InvalidArgumentException) {
+                $links = $byPrice()->apply()->cursorPaginate(3, ['*'], 'cursor', '');
+            }
 
-        try {
-            $byPrice()->apply()->cursorPaginate(3, ['*'], 'cursor', $foreign);
-            $this->fail('A cursor from another order should throw.');
-        } catch (UnexpectedValueException) {
-            $this->assertSame(['P3', 'P6', 'P1'], $byPrice()->apply()->cursorPaginate(3, ['*'], 'cursor', '')->getCollection()->pluck('name')->all());
+            return $links->getCollection()->pluck('name')->all();
+        };
+
+        $foreign = $this->listing('sort=name')->sorts('price', 'name')->apply()->cursorPaginate(3)->nextCursor()?->encode();
+        $forged = new Cursor(['products.price' => null, 'products.id' => null])->encode();
+
+        foreach (['another order' => $foreign, 'a forged null' => $forged] as $case => $cursor) {
+            $this->assertSame(['P3', 'P6', 'P1'], $guarded($cursor), $case);
         }
     }
 }

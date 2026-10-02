@@ -239,13 +239,13 @@ $page = filter_var($request->query('page'), FILTER_VALIDATE_INT, ['options' => [
 $rows = $listing->apply()->simplePaginate($perPage, ['*'], 'page', $page)->withQueryString();
 ```
 
-A garbage `?cursor` gives the first page, but a well-formed one from another sort order makes Laravel throw. Show the
-first page instead:
+A garbage `?cursor` gives the first page, but Laravel throws for a well-formed one from another sort order, and for one
+forged to hold a null. Show the first page instead; an error that is not the cursor's throws again from the retry:
 
 ```php
 try {
     $links = $listing->apply()->cursorPaginate(25)->withQueryString();
-} catch (\UnexpectedValueException) {
+} catch (\UnexpectedValueException|\InvalidArgumentException) {
     $links = $listing->apply()->cursorPaginate(25, ['*'], 'cursor', '')->withQueryString();
 }
 ```

@@ -258,8 +258,10 @@ page returns 200 with the default list:
   narrowed like an id with `intdiv(PHP_INT_MAX, $perPage)` as its max; the README shows the line.
 - **Cursor pagination through `apply()`.** A garbage `?cursor` decodes to `null` and gives the first page. But a
   well-formed cursor that names other columns, from another sort order, makes Laravel's `Cursor::parameter()` throw
-  `UnexpectedValueException`, which is a 500. `sortUrl()` drops `cursor` so a header link never does this. A bookmark
-  or a hand-edited URL still can, so a cursor screen catches it and shows the first page; the README shows how.
+  `UnexpectedValueException`, which is a 500, and a cursor forged to hold a null makes `where()` throw
+  `InvalidArgumentException` (found by the exe-laravel sweep, 2026-10-02). `sortUrl()` drops `cursor` so a header link
+  never does this. A bookmark or a hand-edited URL still can, so a cursor screen catches both and shows the first page;
+  the README shows how. A retry that is not about the cursor throws again.
 - Engine and driver quirks the package cannot see:
   - **PostgreSQL raises, instead of matching nothing, when a value does not fit the column's type.** An `id()` on an
     `integer` (not `bigInteger`) column needs `max: 2147483647`, and so does an `ids()`, where one value out of range fails
