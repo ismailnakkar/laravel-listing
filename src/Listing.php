@@ -75,6 +75,19 @@ final class Listing
     }
 
     /**
+     * Gives every other paginator in the app the page rule a listing has: `?page` from the query string only, a
+     * positive whole number whose offset still fits an int at up to 10,000 rows a page; anything else is the first
+     * page. Laravel's own resolver takes any int from the query or the body, and its offset overflows. Call it once, in
+     * a service provider's boot(); a listing's own pages cap by their real size and need no call.
+     */
+    public static function protectAllPages(): void
+    {
+        Paginator::currentPageResolver(
+            static fn (string $pageName = 'page'): int => Filter::positiveInt(request()->query($pageName), intdiv(PHP_INT_MAX, 10_000)) ?? 1,
+        );
+    }
+
+    /**
      * A positive int up to $max, matched exactly. In place of the column, a closure gets the query and the int.
      *
      * @param  string|(Closure(Query<*>, int): mixed)|null  $column

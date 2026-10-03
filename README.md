@@ -233,6 +233,9 @@ Each takes a page size, else the model's `$perPage`, and its links keep the quer
 
 - **`?page`** reads like an id. One that is not a positive whole number, or so large its offset would overflow, shows
   the first page. Laravel's own resolver takes `?page=9223372036854775807`, a 500 on PHP 8.5.
+- **Every other paginator.** Call `Listing::protectAllPages()` once, in a service provider's `boot()`, and Laravel's
+  own `paginate()` and `simplePaginate()` read `?page` the same way, from the query string only, for page sizes up to
+  10,000.
 - **`?cursor`** comes from the query string like every other parameter. Laravel throws for a cursor from another sort
   order, such as a bookmark from before a deploy that changed the order, and for one holding a null. PostgreSQL and
   SQL Server also reject a hand-edited value the column cannot hold. `cursorPaginate()` shows the first page for each;
@@ -241,7 +244,8 @@ Each takes a page size, else the model's `$perPage`, and its links keep the quer
   other direction the NULL rows never show. Give a cursor screen NOT NULL sort columns; `timestamps()` columns are
   nullable.
 - **A joined column** pages by its select alias (see [Sorts](#sorts)).
-- **A statement timeout** goes around the call: set it, call `cursorPaginate()`, then restore it.
+- **A statement timeout.** On MySQL and MariaDB 12 or later, start the query with Laravel's `->timeout($seconds)`: the
+  listing keeps it. Other databases ignore that call, so set their statement timeout around `cursorPaginate()`.
 
 ### Without paging
 

@@ -33,6 +33,34 @@ final class PaginationTest extends TestCase
         return Listing::for(Product::query(), $request);
     }
 
+    /**
+     * A plain paginator, not a listing, on a request carrying this query string and this body.
+     *
+     * @param  array<string, string>  $body
+     */
+    private function plainPage(string $query, array $body = []): int
+    {
+        $this->app->instance('request', Request::create('/products?' . $query, $body === [] ? 'GET' : 'POST', $body));
+
+        return Product::query()->paginate(5)->currentPage();
+    }
+
+    public function test_protect_all_pages_gives_a_plain_paginator_the_page_cap_from_the_query_string_only(): void
+    {
+        $this->seedProducts(20);
+        $cap = intdiv(PHP_INT_MAX, 10_000);
+        Listing::protectAllPages();
+
+        $this->assertSame(3, $this->plainPage('page=3'));
+        $this->assertSame($cap, $this->plainPage('page=' . $cap));
+
+        foreach (['page=9223372036854775807', 'page=' . ($cap + 1), 'page[]=2', 'page=abc', 'page=0', 'page=-1'] as $query) {
+            $this->assertSame(1, $this->plainPage($query), $query);
+        }
+
+        $this->assertSame(1, $this->plainPage('', ['page' => '2']), 'a body never sets the page');
+    }
+
     public function test_the_page_size_is_the_argument_else_the_models(): void
     {
         $this->seedProducts(20);
