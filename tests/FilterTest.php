@@ -38,9 +38,9 @@ final class FilterTest extends TestCase
         $this->assertSame('ééé', $this->listing('name=%C3%A9%C3%A9%C3%A9')->text('name', max: 3)->values['name']);
     }
 
-    public function test_id_is_a_positive_int_within_max(): void
+    public function test_int_is_a_positive_int_within_max(): void
     {
-        $value = fn (string $query, int $max = PHP_INT_MAX): mixed => $this->listing($query)->id(max: $max)->values['id'];
+        $value = fn (string $query, int $max = PHP_INT_MAX): mixed => $this->listing($query)->int('id', max: $max)->values['id'];
 
         $this->assertSame(7, $value('id=7'));
         $this->assertSame(7, $value('id=007'));
@@ -86,7 +86,7 @@ final class FilterTest extends TestCase
         Product::create(['name' => 'Floor', 'kind' => 'film', 'status' => 0, 'paid' => false]);
 
         $names = fn (string $query): array => $this->listing($query)
-            ->text('name')->id()->flag('paid')->enum('status', Status::class)->enum('kind', Kind::class)
+            ->text('name')->int('id')->flag('paid')->enum('status', Status::class)->enum('kind', Kind::class)
             ->apply()->pluck('name')->all();
 
         $this->assertSame(['Floor', 'Desk'], $names(''));
@@ -106,7 +106,7 @@ final class FilterTest extends TestCase
 
         // A plain closure: an arrow function would capture $calls by value, and the count would stay 0.
         $listing = function (string $query) use (&$calls): Listing {
-            return $this->listing($query)->id('min', function (Builder $q, int $min) use (&$calls): void {
+            return $this->listing($query)->int('min', function (Builder $q, int $min) use (&$calls): void {
                 $calls++;
                 $q->where('price', '>=', $min);
             });
@@ -133,9 +133,9 @@ final class FilterTest extends TestCase
         $this->assertSame([Kind::book], $this->listing('kind[]=book&kind[]=BOOK&kind[]=book')->enums('kind', Kind::class)->values['kind']);
     }
 
-    public function test_ids_read_a_list_of_positive_ints_within_max(): void
+    public function test_ints_read_a_list_of_positive_ints_within_max(): void
     {
-        $ids = fn (string $query, int $max = PHP_INT_MAX): mixed => $this->listing($query)->ids('category', max: $max)->values['category'];
+        $ids = fn (string $query, int $max = PHP_INT_MAX): mixed => $this->listing($query)->ints('category', max: $max)->values['category'];
 
         $this->assertSame([3, 1], $ids('category[]=3&category[]=1&category[]=003'));
         $this->assertSame([7], $ids('category=7'));
@@ -147,7 +147,7 @@ final class FilterTest extends TestCase
     public function test_a_list_of_more_than_1000_values_reads_as_empty(): void
     {
         $ids = fn (int $count): mixed => Listing::for(Product::query(), Request::create('/', 'GET', ['category' => array_map(strval(...), range(1, $count))]))
-            ->ids('category')->values['category'];
+            ->ints('category')->values['category'];
 
         $this->assertCount(1000, $ids(1000));
         $this->assertSame([], $ids(1001));
@@ -157,7 +157,7 @@ final class FilterTest extends TestCase
     public function test_only_the_query_string_is_read(): void
     {
         $json = Request::create('/?name=Desk', 'GET', [], [], [], ['CONTENT_TYPE' => 'application/json'], (string)json_encode(['category' => ['1', '2'], 'name' => 'Lamp']));
-        $listing = Listing::for(Product::query(), $json)->ids('category')->text('name');
+        $listing = Listing::for(Product::query(), $json)->ints('category')->text('name');
 
         $this->assertSame([], $listing->values['category']);
         $this->assertSame('Desk', $listing->values['name']);
@@ -178,7 +178,7 @@ final class FilterTest extends TestCase
         $names = function (string $query) use (&$calls): array {
             return $this->listing($query)
                 ->enums('status', Status::class)
-                ->ids('category', 'category_id')
+                ->ints('category', 'category_id')
                 ->enums('kind', Kind::class, function (Builder $q, array $kinds) use (&$calls): void {
                     $calls++;
                     $q->whereIn('kind', $kinds);
@@ -202,7 +202,7 @@ final class FilterTest extends TestCase
 
         $query = Product::query()->join('products as twin', 'twin.id', '=', 'products.id')->select('products.*');
         $listing = Listing::for($query, Request::create('/?name=Desk&id=1&paid=1&status=1&day=2026-10-01'))
-            ->text('name')->id()->flag('paid')->enum('status', Status::class)->date('day');
+            ->text('name')->int('id')->flag('paid')->enum('status', Status::class)->date('day');
 
         $this->assertSame(['Desk'], $listing->apply()->pluck('name')->all());
     }

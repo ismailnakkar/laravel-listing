@@ -28,7 +28,7 @@ final class ScreenTest extends TestCase
                 ->enum('status', Status::class)
                 ->enums('kind', Kind::class)
                 ->flag('paid')
-                ->id()
+                ->int('id')
                 ->date('from', 'day', '>=')
                 ->date('to', 'day', '<=')
                 ->sorts('name', 'price');

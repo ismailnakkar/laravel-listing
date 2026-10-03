@@ -54,17 +54,17 @@ shows the first page; a page past the last one is empty, as in Laravel. For larg
 
 | Method | Reads `?key=` as | Keeps the rows where |
 | --- | --- | --- |
-| `id($key = 'id', $column = null, $max = PHP_INT_MAX)` | a positive `int` up to `$max` | the column is it |
+| `int($key, $column = null, $max = PHP_INT_MAX)` | a positive `int` up to `$max` | the column is it |
 | `text($key, $column = null, $max = 255)` | the trimmed string; empty is `null` | the column is it |
 | `flag($key, $column = null)` | `'1'` as `true`, `'0'` as `false` | the column is it |
 | `enum($key, Enum::class, $column = null)` | the backed case; an int-backed enum reads digits only | the column is it |
 | `enums($key, Enum::class, $column = null)` | a list of backed cases: `?key[]=a&key[]=b`, or one `?key=a` | the column is any of them |
-| `ids($key, $column = null, $max = PHP_INT_MAX)` | a list of positive `int`s up to `$max` | the column is any of them |
-| `search($key, $columns, $max = 255)` | the trimmed string; empty is `null` | any of the columns contains it, as typed |
+| `ints($key, $column = null, $max = PHP_INT_MAX)` | a list of positive `int`s up to `$max` | the column is any of them |
+| `search($key, $columns = null, $max = 255)` | the trimmed string; empty is `null` | any of the columns contains it, as typed |
 | `date($key, $column = null, $operator = '=')` | a real day, `2026-10-01` | the column falls on it (`=`), on or after it (`>=`), or on or before it (`<=`) |
 
 - A value that does not read as its type is `null` and filters nothing, so the empty fields a form sends filter
-  nothing either. `enums()` and `ids()` hold a list instead: values that do not read are dropped, none is an empty
+  nothing either. `enums()` and `ints()` hold a list instead: values that do not read are dropped, none is an empty
   list, which filters nothing, and more than 1000 values read as an empty list.
 - The column defaults to the key, as a column of the listed model's table, like a positional sort: `enum('status')` on
   orders compares `orders.status`, so it stays unambiguous on a join. A column you pass is used as written: name a
@@ -140,17 +140,17 @@ Pass a closure in place of the column. It runs only when there is a value, and g
 
 | Filter | Value the closure gets |
 | --- | --- |
-| `id()` | an `int` |
+| `int()` | an `int` |
 | `flag()` | a `bool` |
 | `enum()` | the case |
 | `enums()` | a non-empty list of cases |
-| `ids()` | a non-empty list of `int`s |
+| `ints()` | a non-empty list of `int`s |
 | `text()` and `date()` | a `string` |
 
 ```php
 use Illuminate\Database\Eloquent\Builder;
 
-->id('team', fn (Builder $query, int $team) => $query->whereHas('teams', fn (Builder $q) => $q->whereKey($team)))
+->int('team', fn (Builder $query, int $team) => $query->whereHas('teams', fn (Builder $q) => $q->whereKey($team)))
 ```
 
 On a relation, the closure's query is the relation's own, so name a pivot column in full there too. A closure that
@@ -183,7 +183,7 @@ Refill the form from `$listing->values`, never from `request()`: `{{ request('q'
 Every declared key is there, holding its typed value or `null`, so compare with `===`: an `enum()` holds the case, a
 `flag()` a `bool`. The hidden `sort` keeps the order when the form is sent.
 
-For `enums()` or `ids()`, the field sends a list, from a multiple select or checkboxes named `status[]`, and the value
+For `enums()` or `ints()`, the field sends a list, from a multiple select or checkboxes named `status[]`, and the value
 is a list, so the refill tests membership:
 
 ```blade
@@ -294,6 +294,10 @@ The listing only reads the query string. Who may see the page is the route's bus
   - Some throw: `enum()` on an int-backed enum, `date()` on garbage, `string()` on an array.
   - Others misread: `boolean('on')` is `true`, and `integer('12abc')` is `12`.
 - `sort`, `page` and `cursor` are the listing's query-string names.
+- **On a form request**, give the request no `rules()`: a failing rule redirects, so a URL the listing would read as
+  absent bounces. To build the listing once, keep it in a declared property (`private ?Listing $listing = null;`, then
+  `return $this->listing ??= Listing::for($query, $this)->…;`): an undeclared `$this->listing` reads `?listing=` from
+  the request.
 - **A misspelled bare column.** MySQL, MariaDB, PostgreSQL and SQL Server reject it. SQLite reads an unknown bare
   name as a string, so there it matches nothing, or every row in a search, with no error. Test on the database you
   deploy, or name the column in full (`orders.status`), which SQLite does check.
@@ -301,7 +305,7 @@ The listing only reads the query string. Who may see the page is the route's bus
 ## Engine notes
 
 - **PostgreSQL** raises an error, instead of matching nothing, when a value does not fit the column's type:
-  - Give `id()` and `ids()` on an `integer` (not `bigInteger`) column `max: 2147483647`; one `ids()` value out of range
+  - Give `int()` and `ints()` on an `integer` (not `bigInteger`) column `max: 2147483647`; one `ints()` value out of range
     fails the whole list.
   - Filter a `uuid` column with a closure that checks `Str::isUuid()` first.
 - **GROUP BY or DISTINCT** listings fail on PostgreSQL and MySQL, because the key tiebreak orders by a column that is

@@ -33,7 +33,7 @@ final class Listing
 
     /**
      * Each declared key's narrowed value, what the filter form refills from: null when none reads, or for enums() and
-     * ids() a list, empty when none reads.
+     * ints() a list, empty when none reads.
      *
      * @var array<string, mixed>
      */
@@ -92,9 +92,9 @@ final class Listing
      *
      * @param  string|(Closure(Query<*>, int): mixed)|null  $column
      */
-    public function id(string $key = 'id', string|Closure|null $column = null, int $max = PHP_INT_MAX): static
+    public function int(string $key, string|Closure|null $column = null, int $max = PHP_INT_MAX): static
     {
-        return $this->add(Filter::id($key, $this->column($key, $column), $max));
+        return $this->add(Filter::int($key, $this->column($key, $column), $max));
     }
 
     /**
@@ -153,19 +153,20 @@ final class Listing
      *
      * @param  string|(Closure(Query<*>, non-empty-list<int>): mixed)|null  $column
      */
-    public function ids(string $key, string|Closure|null $column = null, int $max = PHP_INT_MAX): static
+    public function ints(string $key, string|Closure|null $column = null, int $max = PHP_INT_MAX): static
     {
-        return $this->add(Filter::ids($key, $this->column($key, $column), $max));
+        return $this->add(Filter::ints($key, $this->column($key, $column), $max));
     }
 
     /**
-     * Rows where any of the columns contains the trimmed term as typed: `%`, `_`, `!` and `[` match themselves.
+     * Rows where any of the columns contains the trimmed term as typed: `%`, `_`, `!` and `[` match themselves. With no
+     * columns, the key's own column, as for every other filter.
      *
-     * @param  string|non-empty-list<string>  $columns
+     * @param  string|non-empty-list<string>|null  $columns
      */
-    public function search(string $key, string|array $columns, int $max = 255): static
+    public function search(string $key, string|array|null $columns = null, int $max = 255): static
     {
-        return $this->add(Filter::search($key, $columns, $max));
+        return $this->add(Filter::search($key, $columns ?? $this->query->getModel()->qualifyColumn($key), $max));
     }
 
     /**

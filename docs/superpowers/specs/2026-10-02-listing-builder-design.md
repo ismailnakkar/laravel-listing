@@ -92,13 +92,13 @@ public function index(Request $request)
 | Method | Reads `?key=` as | Then, when there is a value |
 |---|---|---|
 | `for(Builder $query, Request $request): self` | — | Starts a listing of an Eloquent query or a relation (`$team->members()`). `Builder` is `Illuminate\Contracts\Database\Eloquent\Builder`. |
-| `id(string $key = 'id', string\|Closure\|null $column = null, int $max = PHP_INT_MAX)` | a positive `int` up to `$max` | `where($column ?? <model table>.$key, $id)` |
+| `int(string $key, string\|Closure\|null $column = null, int $max = PHP_INT_MAX)` | a positive `int` up to `$max` | `where($column ?? <model table>.$key, $int)`. Was `id($key = 'id')` until 0.4, renamed with the key required by the owner on 2026-10-03: `->id()->id('user_id')` read as a column, not a type. |
 | `text(string $key, string\|Closure\|null $column = null, int $max = 255)` | the trimmed string; empty is `null` | `where($column ?? <model table>.$key, $text)` |
 | `flag(string $key, string\|Closure\|null $column = null)` | `'1'` as `true`, `'0'` as `false` | `where($column ?? <model table>.$key, $bool)` |
 | `enum(string $key, class-string<BackedEnum> $enum, string\|Closure\|null $column = null)` | the backed case; an int-backed enum reads digits only | `where($column ?? <model table>.$key, $case)` |
 | `enums(string $key, class-string<BackedEnum> $enum, string\|Closure\|null $column = null)` | a list of backed cases, `?key[]=a&key[]=b` or one `?key=a`; values that name no case are dropped, duplicates removed | `whereIn($column ?? <model table>.$key, $cases)` |
-| `ids(string $key, string\|Closure\|null $column = null, int $max = PHP_INT_MAX)` | a list of positive `int`s up to `$max`, read like `enums()` | `whereIn($column ?? <model table>.$key, $ids)` |
-| `search(string $key, string\|non-empty-list<string> $columns, int $max = 255)` | the trimmed string; empty is `null` | any of the columns contains it as typed, in any letter case the database lowercases |
+| `ints(string $key, string\|Closure\|null $column = null, int $max = PHP_INT_MAX)` | a list of positive `int`s up to `$max`, read like `enums()` | `whereIn($column ?? <model table>.$key, $ints)`. Was `ids()` until 0.4. |
+| `search(string $key, string\|non-empty-list<string>\|null $columns = null, int $max = 255)` | the trimmed string; empty is `null` | any of the columns contains it as typed, in any letter case the database lowercases. With no columns, `<model table>.$key`, as for every other filter (0.4, 2026-10-03). |
 | `date(string $key, string\|Closure\|null $column = null, '='\|'>='\|'<=' $operator = '=')` | a real day, `Y-m-d`, from 1753-01-01 to 9999-12-31 | whole days; see section 3 |
 | `sorts(string ...$columns): self` | — | Adds names that `?sort=` may use. Every call adds to them, and a name given again takes its new column. A positional name is a column of the model's table. A named argument is an alias for any other column or a select alias (`customer: 'customers.name'`). |
 | `defaultSort(string $sort): self` | — | `'-created_at'`. Until it is called, the default is the model's key, descending. |
@@ -114,7 +114,7 @@ General rules for the filter methods:
   column that is passed is used as written, so name a joined or pivot column in full (`customers.email`,
   `team_user.role`). Decided by the owner on 2026-10-02, after three fresh-app trials found the README's own join
   example returning a 500 on `?status=` when `customers` also has `status`.
-- **List filters** (`enums()`, added for 0.1 on 2026-10-02 with `ids()`). The value is a list, never `null`: empty when
+- **List filters** (`enums()`, added for 0.1 on 2026-10-02 with `ids()`, now `ints()`). The value is a list, never `null`: empty when
   nothing reads, which adds nothing and calls no closure, so a view can test it with `in_array()`. More than 1000
   values read as an empty list, a backstop for a server that raises `max_input_vars`, since SQL Server takes at most
   2100 bindings.
@@ -126,10 +126,10 @@ General rules for the filter methods:
 - **Closure filters.** A closure passed as `$column` is called only when the value is not `null` (or, for a list, not
   empty). It receives the
   concrete `Illuminate\Database\Eloquent\Builder` (for a relation, its underlying query) and the narrowed value:
-  - `id`: an `int`
+  - `int`: an `int`
   - `flag`: a `bool`
   - `enum`: the enum case
-  - `enums` and `ids`: a non-empty list of cases or `int`s
+  - `enums` and `ints`: a non-empty list of cases or `int`s
   - `text` and `date`: a `string` (`date` gives `Y-m-d`)
 - **Order.** Filters apply in the order they are declared.
 - **One filter per key.** Declaring a key that is already declared throws a `LogicException` where the screen
@@ -264,8 +264,8 @@ page returns 200 with the default list:
   value the column cannot hold (SQLSTATE class 22 on PostgreSQL and SQL Server). The three paginate methods guard
   each of these; code that pages `apply()` itself has to repeat their guards.
 - Engine and driver quirks the package cannot see:
-  - **PostgreSQL raises, instead of matching nothing, when a value does not fit the column's type.** An `id()` on an
-    `integer` (not `bigInteger`) column needs `max: 2147483647`, and so does an `ids()`, where one value out of range fails
+  - **PostgreSQL raises, instead of matching nothing, when a value does not fit the column's type.** An `int()` on an
+    `integer` (not `bigInteger`) column needs `max: 2147483647`, and so does an `ints()`, where one value out of range fails
     the whole list. A `uuid` column needs a closure that checks
     `Str::isUuid()` first, never `text()`.
   - pdo_dblib on SQL Server converts bound text to code page 1252.
@@ -430,25 +430,17 @@ commands:
 
 ## Consumers
 
-**exe-laravel** loads the package through a symlinked path repository (`../laravel-listing`, `*@dev`), so the working
-tree is live in it. These files use the current API:
-
-- the 5 `ListingRequest` subclasses: `Member/LinkFilterRequest`, `Admin/LinkFilterRequest`, `Admin/UserFilterRequest`,
-  `Admin/WithdrawalFilterRequest` and `Admin/BrowseStatisticsRequest`
-- `Concerns/FiltersLinks`, which calls `Like::contains()`
-- `FilterRequestTest`, a reflection test over the subclasses
-- the withdrawals sort headers, which link with `order`/`dir`
-- `app/Services/Links/LinkSearch.php`, which does cursor pagination with statement timeouts
-
-On 2026-10-02 the owner decided that exe stays broken until the redesign lands, and that the owner will decide later
-who migrates it. The exe-laravel session stays out of the package and those files until it hears the API is final.
+**exe-laravel** requires the package from Packagist (`^0.2`, locked at v0.2.0 as of 2026-10-03), so this working
+tree does not reach it. Its five list screens build their listings on rule-less form requests (`Concerns/FiltersLinks`
+shares the links filters). Moving it to 0.4 turns `->id($key, …)` into `->int($key, …)` and a bare `->id()` into
+`->int('id')`.
 
 ## Migrating from the 2026-10-01 API
 
 | Before | After |
 |---|---|
 | a `ListingRequest` subclass and its `applyTo()` | a `Listing::for()` chain in the controller |
-| `text()`, `id()`, `flag()`, `choice()` accessors | `->text()`, `->id()`, `->flag()`, `->enum()` declarations, read through `$listing->values` |
+| `text()`, `id()`, `flag()`, `choice()` accessors | `->text()`, `->int($key)`, `->flag()`, `->enum()` declarations, read through `$listing->values` |
 | `sortable()` and `defaultSort(): Sort` | `->sorts(...)` and `->defaultSort('-created_at')` |
 | `?order=total&dir=asc` | `?sort=total`; `?sort=-total` for descending |
 | `Like::contains($query, $columns, $term)` | `->search($key, $columns)` |

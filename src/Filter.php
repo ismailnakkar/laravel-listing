@@ -27,7 +27,7 @@ final readonly class Filter
         private Closure $apply,
     ) {}
 
-    public static function id(string $key, string|Closure $column, int $max): self
+    public static function int(string $key, string|Closure $column, int $max): self
     {
         return new self($key, fn (mixed $input): ?int => self::positiveInt($input, $max), self::where($column));
     }
@@ -64,7 +64,7 @@ final readonly class Filter
     }
 
     /** Any of the positive ints up to $max a list names: `?category[]=3&category[]=7`, or one `?category=3`. */
-    public static function ids(string $key, string|Closure $column, int $max): self
+    public static function ints(string $key, string|Closure $column, int $max): self
     {
         return self::many($key, fn (mixed $input): ?int => self::positiveInt($input, $max), $column);
     }

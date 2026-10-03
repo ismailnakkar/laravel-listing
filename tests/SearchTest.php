@@ -70,6 +70,14 @@ final class SearchTest extends TestCase
         $this->assertSame(['Lamp shade'], $this->search(['name', 'kind'], 'lamp', Product::query()->where('kind', 'textile')));
     }
 
+    /** As for every other filter, no columns is the key's own column, qualified, so a join with its own `name` holds. */
+    public function test_with_no_columns_the_key_is_the_models_own_column(): void
+    {
+        $query = Product::query()->join('products as twin', 'twin.id', '=', 'products.id')->select('products.*');
+
+        $this->assertSame(['Lamp shade'], Listing::for($query, Request::create('/?name=lamp'))->search('name')->apply()->pluck('name')->all());
+    }
+
     /** PostgreSQL has no lower() for a number, so the column is cast to text there; the PostgreSQL CI leg pins it. */
     public function test_a_number_column_can_be_searched(): void
     {
