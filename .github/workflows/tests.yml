@@ -52,6 +52,11 @@ jobs:
             port: 5432
             username: postgres
             health: pg_isready
+          - connection: mariadb
+            image: mariadb:11.8
+            port: 3306
+            username: root
+            health: healthcheck.sh --connect --innodb_initialized
           - connection: mysql
             image: mysql:8.4
             port: 3306

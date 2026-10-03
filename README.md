@@ -126,6 +126,10 @@ How the order is chosen:
 Keep the list narrow: each column needs an index, or the page scans on every click. On PostgreSQL the index has to
 cover the column and the key.
 
+### The current request
+
+Pass `Listing::for()` the current request: paginator links are built from the container's request.
+
 ### A relation
 
 `Listing::for()` takes a relation as well as a query, and pages it as itself, so each row keeps its `pivot`:
@@ -331,15 +335,22 @@ docker run -d --name listing-pg -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=listi
 DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=listing DB_USERNAME=postgres DB_PASSWORD=secret vendor/bin/phpunit
 ```
 
-CI runs SQLite on PHP 8.4 and 8.5, and PostgreSQL 18 and MySQL 8.4. Before a release, also run the suite against:
+CI runs SQLite on PHP 8.4 and 8.5, and PostgreSQL 18, MariaDB 11.8 and MySQL 8.4. Before a release, also run the suite against:
 
-- MariaDB 11.8 (`DB_CONNECTION=mariadb`)
 - SQL Server 2022 (`DB_CONNECTION=sqlsrv`) from a PHP with `pdo_sqlsrv`; through `pdo_dblib`, conversion errors
   vanish
 
 Then do a mutation pass on SQLite and PostgreSQL: revert each guard, and some test must fail.
 
+## Upgrading
+
+- 0.4: `Listing::id()` and `ids()` are now `int()` and `ints()`.
+
 ## Deliberately not here
 
 Query DSLs, multi-column sort and JSON APIs. For an API, use spatie/laravel-query-builder. A list page that needs
 more reads `$listing->values` and writes it.
+
+## Licence
+
+MIT.

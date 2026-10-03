@@ -70,11 +70,8 @@ final readonly class Filter
     }
 
     /**
-     * Rows where any of the columns contains the term as typed, in any letter case the database lowercases. `%` and
-     * `_` are LIKE wildcards; `!` escapes them because it is plain text in every database's string literals, so one
-     * ESCAPE clause works on MySQL, MariaDB, PostgreSQL, SQLite and SQL Server, which do not agree on a default; `[`
-     * opens a character set on SQL Server. PostgreSQL has no lower() for a number, date or uuid, so a column is cast to
-     * text there, as Laravel's own LIKE does; the parentheses keep a JSON path (`meta->tags[0]`) whole.
+     * Rows where any column contains the term, case-insensitively; `!` escapes LIKE wildcards and `[` because it is
+     * plain text in every database, and PostgreSQL columns are cast to text.
      *
      * @param  string|non-empty-list<string>  $columns
      */
@@ -94,14 +91,8 @@ final readonly class Filter
     }
 
     /**
-     * A day as `<input type="date">` sends it, `2026-10-01`, from 1753-01-01, where SQL Server's legacy `datetime`
-     * starts, to 9999-12-31. The operator compares whole days: '=' keeps that day, '>=' that day or later, '<=' that
-     * day or earlier, through its last instant. A closure in place of the column gets the day string.
-     *
-     * The range is half-open and bound as plain strings, not whereDate(), so an index serves it, and not a DateTime,
-     * which SQLite compares as text against a `Y-m-d` column. SQL Server gets `Ymd`, which reads the same in every
-     * login language. Both bounds come from one UTC date, so a zone that skipped a day cannot shift them; 9999-12-31
-     * has no next day, so as an upper bound alone it only keeps NULL dates out.
+     * A day as `<input type="date">` sends it, 1753-01-01 to 9999-12-31; the operator compares whole days. The range
+     * is half-open and bound as strings, not whereDate(), so an index serves it. A closure gets the day string.
      *
      * @param  '='|'>='|'<='  $operator
      */
@@ -135,10 +126,8 @@ final readonly class Filter
     }
 
     /**
-     * The trimmed string, or null when the input is not a string, is empty once trimmed, is longer than $max
-     * characters, or holds bytes a database mishandles as text: invalid UTF-8 errors on PostgreSQL and matches every
-     * row on MySQL, and a NUL cuts a LIKE pattern short on SQLite and PostgreSQL. Str::trim, so a pasted non-breaking
-     * space goes too.
+     * The trimmed string, or null when empty, too long, not a string, or holding invalid UTF-8 or a NUL, which
+     * databases mishandle.
      */
     public static function cleanString(mixed $input, int $max = 255): ?string
     {

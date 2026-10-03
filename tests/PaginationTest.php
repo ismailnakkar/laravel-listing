@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Listing\Tests;
 
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\Cursor;
 use Illuminate\Pagination\CursorPaginator;
@@ -14,6 +15,7 @@ use Listing\Tests\Fixtures\Category;
 use Listing\Tests\Fixtures\Member;
 use Listing\Tests\Fixtures\Product;
 use Listing\Tests\Fixtures\Team;
+use PDOException;
 
 final class PaginationTest extends TestCase
 {
@@ -171,6 +173,46 @@ final class PaginationTest extends TestCase
         }
 
         $this->assertLessThanOrEqual(3, $page->count());
+    }
+
+    /** @return array{int, mixed} the query count and the outcome, with the first query failing as the SQLSTATE says */
+    private function cursorWhenFirstQueryFails(string $sqlState): array
+    {
+        $this->seedProducts(4);
+        $queries = 0;
+        DB::beforeExecuting(function () use (&$queries, $sqlState): void {
+            if (++$queries === 1) {
+                $previous = new class($sqlState) extends PDOException
+                {
+                    public function __construct(string $state)
+                    {
+                        parent::__construct('failed');
+                        $this->code = $state;
+                    }
+                };
+
+                throw new QueryException(DB::getDefaultConnection(), 'select 1', [], $previous);
+            }
+        });
+
+        try {
+            $outcome = $this->listing('')->sorts('name')->cursorPaginate(3);
+        } catch (QueryException $e) {
+            $outcome = $e;
+        }
+
+        return [$queries, $outcome];
+    }
+
+    public function test_cursor_paginate_retries_a_class_22_error_and_rethrows_any_other(): void
+    {
+        [$queries, $page] = $this->cursorWhenFirstQueryFails('22P02');
+        $this->assertSame(2, $queries);
+        $this->assertInstanceOf(CursorPaginator::class, $page);
+
+        [$queries, $error] = $this->cursorWhenFirstQueryFails('70100');
+        $this->assertSame(1, $queries);
+        $this->assertInstanceOf(QueryException::class, $error);
     }
 
     /** Laravel reads each cursor value off the row by its name, so a joined column pages by its select alias. */

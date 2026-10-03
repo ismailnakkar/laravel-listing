@@ -22,8 +22,7 @@ use UnexpectedValueException;
 
 /**
  * A Blade list page's query: the filters and sorts its query string may set, read leniently, so that no URL bounces
- * the page. Only the query string is read: a form or JSON body never sets a filter, a sort or a page. Build it in the controller with for(); the view refills its form from `values` and links its headers
- * with sortUrl() and ariaSort().
+ * the page. Only the query string is read, never the body. Build it with for(), given the current request.
  *
  * @template TModel of Model
  */
@@ -75,10 +74,8 @@ final class Listing
     }
 
     /**
-     * Gives every other paginator in the app the page rule a listing has: `?page` from the query string only, a
-     * positive whole number whose offset still fits an int at up to 10,000 rows a page; anything else is the first
-     * page. Laravel's own resolver takes any int from the query or the body, and its offset overflows. Call it once, in
-     * a service provider's boot(); a listing's own pages cap by their real size and need no call.
+     * Gives every other paginator the listing's page rule (query string only, an offset that fits an int); call it
+     * once in a service provider's boot().
      */
     public static function protectAllPages(): void
     {
@@ -261,11 +258,8 @@ final class Listing
     }
 
     /**
-     * The filtered, sorted page by cursor: no COUNT and no OFFSET, its links keeping the query string. `?cursor` comes
-     * from the query string like every other parameter. A cursor from another sort order, one holding a null, or one
-     * holding a value the column's type cannot hold (PostgreSQL and SQL Server raise SQLSTATE class 22) shows the first
-     * page; an error that is not the cursor's throws again from the retry. As in Laravel, a page ending on a NULL sort
-     * value links back to the first page, and a joined column pages only by its select alias.
+     * The filtered, sorted page by cursor; a cursor the sort or column cannot take (SQLSTATE class 22) shows the first
+     * page, any other database error throws.
      *
      * @return CursorPaginator<int, TModel>
      */
