@@ -156,8 +156,9 @@ final class Listing
     }
 
     /**
-     * Rows where any of the columns contains the trimmed term as typed: `%`, `_`, `!` and `[` match themselves. With no
-     * columns, the key's own column, as for every other filter.
+     * Rows where any of the columns contains the trimmed term as typed: `%`, `_`, `!` and `[` match themselves. Letter
+     * case is as whereLike(): the column's collation on MySQL, MariaDB and SQL Server, ILIKE on PostgreSQL, ASCII case
+     * ignored on SQLite. With no columns, the key's own column, as for every other filter.
      *
      * @param  string|non-empty-list<string>|null  $columns
      */

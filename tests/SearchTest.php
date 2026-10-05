@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Listing\Tests;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Listing\Listing;
 use Listing\Tests\Fixtures\Product;
 
@@ -52,14 +54,32 @@ final class SearchTest extends TestCase
         $this->assertSame(['%![x]%'], $query->getBindings());
     }
 
-    /** SQLite's LIKE ignores ASCII case by itself, so turn that off there to see lower() work. */
+    /** A default collation, ILIKE and SQLite's own LIKE all ignore case. */
     public function test_a_term_matches_in_any_letter_case(): void
     {
-        if (DB::getDriverName() === 'sqlite') {
-            DB::statement('PRAGMA case_sensitive_like = ON');
+        $this->assertSame(['Alice'], $this->search('name', 'aLICE'));
+    }
+
+    /** The column is compared as stored, so its collation decides letter case and no function runs per row. */
+    public function test_the_column_is_not_lowercased(): void
+    {
+        $query = Listing::for(Product::query(), Request::create('/?q=Alice'))->search('q', 'name')->apply();
+
+        $this->assertStringNotContainsStringIgnoringCase('lower(', $query->toSql());
+    }
+
+    /** A `_bin` column matches letter case exactly, as its collation says. */
+    public function test_a_binary_collated_column_matches_letter_case_exactly(): void
+    {
+        if (! in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
+            $this->markTestSkipped('A per-column binary collation is a MySQL and MariaDB check.');
         }
 
-        $this->assertSame(['Alice'], $this->search('name', 'aLICE'));
+        Schema::table('products', fn (Blueprint $table) => $table->string('reference')->nullable()->collation('utf8mb4_bin')->change());
+        Product::create(['name' => 'Binary', 'reference' => 'Alice']);
+
+        $this->assertSame([], $this->search('reference', 'ALICE'));
+        $this->assertSame(['Binary'], $this->search('reference', 'Alice'));
     }
 
     /** The columns are OR'ed inside their own group, so a where() before the search still holds. */
@@ -78,7 +98,7 @@ final class SearchTest extends TestCase
         $this->assertSame(['Lamp shade'], Listing::for($query, Request::create('/?name=lamp'))->search('name')->apply()->pluck('name')->all());
     }
 
-    /** PostgreSQL has no lower() for a number, so the column is cast to text there; the PostgreSQL CI leg pins it. */
+    /** PostgreSQL has no ILIKE for a number, so the column is cast to text there; the PostgreSQL CI leg pins it. */
     public function test_a_number_column_can_be_searched(): void
     {
         Product::create(['name' => 'Priced', 'price' => 512]);

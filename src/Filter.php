@@ -70,8 +70,9 @@ final readonly class Filter
     }
 
     /**
-     * Rows where any column contains the term, case-insensitively; `!` escapes LIKE wildcards and `[` because it is
-     * plain text in every database, and PostgreSQL columns are cast to text.
+     * Rows where any column contains the term; `!` escapes LIKE wildcards and `[` because it is plain text in every
+     * database, and PostgreSQL columns are cast to text. Letter case is as Laravel's whereLike(): the column's collation
+     * on MySQL, MariaDB and SQL Server, ILIKE on PostgreSQL, ASCII case ignored on SQLite.
      *
      * @param  string|non-empty-list<string>  $columns
      */
@@ -80,11 +81,11 @@ final readonly class Filter
         return new self($key, fn (mixed $input): ?string => self::cleanString($input, $max), function (Builder $query, string $term) use ($columns): void {
             $pattern = '%' . strtr($term, ['!' => '!!', '%' => '!%', '_' => '!_', '[' => '![']) . '%';
             $grammar = $query->getQuery()->getGrammar();
-            $text = $grammar instanceof PostgresGrammar ? '(%s)::text' : '%s';
+            $like = $grammar instanceof PostgresGrammar ? "(%s)::text ilike ? escape '!'" : "%s like ? escape '!'";
 
-            $query->where(function (Builder $query) use ($columns, $grammar, $pattern, $text): void {
+            $query->where(function (Builder $query) use ($columns, $grammar, $like, $pattern): void {
                 foreach ((array)$columns as $column) {
-                    $query->orWhereRaw('lower(' . sprintf($text, $grammar->wrap($column)) . ") like lower(?) escape '!'", [$pattern]);
+                    $query->orWhereRaw(sprintf($like, $grammar->wrap($column)), [$pattern]);
                 }
             });
         });

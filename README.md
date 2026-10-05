@@ -79,8 +79,9 @@ shows the first page; a page past the last one is empty, as in Laravel. For larg
 `search()` keeps the rows where any of the columns contains the term as typed: `%`, `_`, `!` and `[` match
 themselves.
 
-- **Letter case** does not matter as far as the database lowercases. SQLite and a PostgreSQL `C` locale lowercase
-  ASCII letters only, and MySQL's and MariaDB's default collation ignores accents too.
+- **Letter case** follows the column's collation on MySQL, MariaDB and SQL Server: their default collations ignore
+  case (MySQL's and MariaDB's accents too), and a `_bin` or `_cs` column matches case exactly. PostgreSQL uses
+  `ILIKE`, ASCII letters only under a `C` locale, and SQLite ignores ASCII case.
 - **PostgreSQL** casts each column to text, so a number, date or uuid column can be searched.
 - **SQL Server** turns a legacy `datetime` column, which `timestamps()` creates there, into text such as
   `Oct  1 2026 12:00AM`, so a `2026-10-01` term misses. Filter days with `date()`, not `search()`.
@@ -344,7 +345,14 @@ Then do a mutation pass on SQLite and PostgreSQL: revert each guard, and some te
 
 ## Upgrading
 
-- 0.4: `Listing::id()` and `ids()` are now `int()` and `ints()`.
+### From 0.4
+
+- `search()` no longer wraps its columns in `lower()`. On MySQL, MariaDB and SQL Server a `_bin` or `_cs` column now
+  matches letter case exactly; PostgreSQL uses `ILIKE`. Nothing else changes.
+
+### From 0.3
+
+- `Listing::id()` and `ids()` are now `int()` and `ints()`.
 
 ## Deliberately not here
 
