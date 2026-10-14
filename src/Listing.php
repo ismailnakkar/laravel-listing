@@ -85,7 +85,7 @@ final class Listing
     }
 
     /**
-     * A positive int up to $max, matched exactly. In place of the column, a closure gets the query and the int.
+     * A whole number from 0 to $max, matched exactly. In place of the column, a closure gets the query and the int.
      *
      * @param  string|(Closure(Query<*>, int): mixed)|null  $column
      */
@@ -144,9 +144,9 @@ final class Listing
     }
 
     /**
-     * Any of the positive ints up to $max a list names, `?category[]=3&category[]=7` or one `?category=3`; anything else
-     * is dropped. The value is a list of ints, empty when none reads. In place of the column, a closure gets the query
-     * and the non-empty list.
+     * Any of the whole numbers from 0 to $max a list names, `?category[]=3&category[]=7` or one `?category=3`; anything
+     * else is dropped. The value is a list of ints, empty when none reads. In place of the column, a closure gets the
+     * query and the non-empty list.
      *
      * @param  string|(Closure(Query<*>, non-empty-list<int>): mixed)|null  $column
      */
@@ -231,8 +231,8 @@ final class Listing
 
     /**
      * The filtered, sorted page, its links keeping the query string. The page size is $perPage, else, for null or 0 as
-     * in Laravel, the model's. `?page` reads like an id up to the last page whose offset fits an int, so a huge page
-     * shows the first one instead of overflowing.
+     * in Laravel, the model's. `?page` reads as a positive whole number up to the last page whose offset fits an int,
+     * so a huge page shows the first one instead of overflowing.
      *
      * @return LengthAwarePaginator<int, TModel>
      */
@@ -313,7 +313,7 @@ final class Listing
         return $column ?? $this->query->getModel()->qualifyColumn($key);
     }
 
-    /** `?page` read like an id, up to the last page whose offset fits an int; anything else is the first page. */
+    /** `?page` as a positive whole number up to the last page whose offset fits an int, else the first page. */
     private function page(int $perPage): int
     {
         return Filter::positiveInt($this->request->query('page'), intdiv(PHP_INT_MAX, $perPage)) ?? 1;

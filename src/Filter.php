@@ -29,7 +29,7 @@ final readonly class Filter
 
     public static function int(string $key, string|Closure $column, int $max): self
     {
-        return new self($key, fn (mixed $input): ?int => self::positiveInt($input, $max), self::where($column));
+        return new self($key, fn (mixed $input): ?int => self::naturalInt($input, $max), self::where($column));
     }
 
     public static function text(string $key, string|Closure $column, int $max): self
@@ -63,10 +63,10 @@ final readonly class Filter
         return self::many($key, self::caseOf($enum), $column);
     }
 
-    /** Any of the positive ints up to $max a list names: `?category[]=3&category[]=7`, or one `?category=3`. */
+    /** Any of the whole numbers from 0 to $max a list names: `?category[]=3&category[]=7`, or one `?category=3`. */
     public static function ints(string $key, string|Closure $column, int $max): self
     {
-        return self::many($key, fn (mixed $input): ?int => self::positiveInt($input, $max), $column);
+        return self::many($key, fn (mixed $input): ?int => self::naturalInt($input, $max), $column);
     }
 
     /**
@@ -141,13 +141,22 @@ final readonly class Filter
         return $input === '' || mb_strlen($input) > $max ? null : $input;
     }
 
-    /** A positive integer up to $max, or null: digits only, because (int) 'nope' is 0, and in range, because (int) saturates. */
-    public static function positiveInt(mixed $input, int $max = PHP_INT_MAX): ?int
+    /**
+     * A whole number from 0 to $max, or null: digits only, because (int) 'nope' is 0, and in range, because (int)
+     * saturates. Leading zeros are stripped, as FILTER_VALIDATE_INT rejects them.
+     */
+    private static function naturalInt(mixed $input, int $max): ?int
     {
-        $digits = ltrim(self::cleanString($input) ?? '', '0');
+        $digits = self::cleanString($input) ?? '';
         $range = ['options' => ['max_range' => $max], 'flags' => FILTER_NULL_ON_FAILURE];
 
-        return ctype_digit($digits) ? filter_var($digits, FILTER_VALIDATE_INT, $range) : null;
+        return ctype_digit($digits) ? filter_var(ltrim($digits, '0') ?: '0', FILTER_VALIDATE_INT, $range) : null;
+    }
+
+    /** naturalInt() without 0, as `?page` reads. */
+    public static function positiveInt(mixed $input, int $max = PHP_INT_MAX): ?int
+    {
+        return self::naturalInt($input, $max) ?: null;
     }
 
     /**

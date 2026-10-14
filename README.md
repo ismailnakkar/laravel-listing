@@ -54,12 +54,12 @@ shows the first page; a page past the last one is empty, as in Laravel. For larg
 
 | Method | Reads `?key=` as | Keeps the rows where |
 | --- | --- | --- |
-| `int($key, $column = null, $max = PHP_INT_MAX)` | a positive `int` up to `$max` | the column is it |
+| `int($key, $column = null, $max = PHP_INT_MAX)` | a whole number from `0` to `$max` | the column is it |
 | `text($key, $column = null, $max = 255)` | the trimmed string; empty is `null` | the column is it |
 | `flag($key, $column = null)` | `'1'` as `true`, `'0'` as `false` | the column is it |
 | `enum($key, Enum::class, $column = null)` | the backed case; an int-backed enum reads digits only | the column is it |
 | `enums($key, Enum::class, $column = null)` | a list of backed cases: `?key[]=a&key[]=b`, or one `?key=a` | the column is any of them |
-| `ints($key, $column = null, $max = PHP_INT_MAX)` | a list of positive `int`s up to `$max` | the column is any of them |
+| `ints($key, $column = null, $max = PHP_INT_MAX)` | a list of whole numbers from `0` to `$max` | the column is any of them |
 | `search($key, $columns = null, $max = 255)` | the trimmed string; empty is `null` | any of the columns contains it, as typed |
 | `date($key, $column = null, $operator = '=')` | a real day, `2026-10-01` | the column falls on it (`=`), on or after it (`>=`), or on or before it (`<=`) |
 
@@ -236,8 +236,8 @@ To make each header one line, save this as `resources/views/components/sort-head
 
 Each takes a page size, else the model's `$perPage`, and its links keep the query string.
 
-- **`?page`** reads like an id. One that is not a positive whole number, or so large its offset would overflow, shows
-  the first page. Laravel's own resolver takes `?page=9223372036854775807`, a 500 on PHP 8.5.
+- **`?page`** is a positive whole number. One that is not, or is so large its offset would overflow, shows the first
+  page. Laravel's own resolver takes `?page=9223372036854775807`, a 500 on PHP 8.5.
 - **Every other paginator.** Call `Listing::protectAllPages()` once, in a service provider's `boot()`, and Laravel's
   own `paginate()` and `simplePaginate()` read `?page` the same way, from the query string only, for page sizes up to
   10,000.
@@ -344,6 +344,11 @@ CI runs SQLite on PHP 8.4 and 8.5, and PostgreSQL 18, MariaDB 11.8 and MySQL 8.4
 Then do a mutation pass on SQLite and PostgreSQL: revert each guard, and some test must fail.
 
 ## Upgrading
+
+### From 0.5
+
+- `int()` and `ints()` read `0`: `?key=0` now keeps the rows whose column is `0` (none on an auto-increment id)
+  instead of filtering nothing. An "any" option or link that sends `0` must send an empty value.
 
 ### From 0.4
 

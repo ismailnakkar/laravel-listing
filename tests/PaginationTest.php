@@ -26,10 +26,14 @@ final class PaginationTest extends TestCase
         }
     }
 
-    /** Laravel's paginators read the container's request, so a listing built from another one binds it. */
-    private function listing(string $query): Listing
+    /**
+     * Laravel's paginators read the container's request, so a listing built from another one binds it.
+     *
+     * @param  array<string, string>  $body
+     */
+    private function listing(string $query, array $body = []): Listing
     {
-        $request = Request::create('/products?' . $query);
+        $request = Request::create('/products?' . $query, $body === [] ? 'GET' : 'POST', $body);
         $this->app->instance('request', $request);
 
         return Listing::for(Product::query(), $request);
@@ -61,6 +65,10 @@ final class PaginationTest extends TestCase
         }
 
         $this->assertSame(1, $this->plainPage('', ['page' => '2']), 'a body never sets the page');
+
+        // Laravel's paginators turn a 0 from the resolver into page 1, so ask the resolver itself.
+        $this->app->instance('request', Request::create('/products?page=0'));
+        $this->assertSame(1, Paginator::resolveCurrentPage());
     }
 
     public function test_the_page_size_is_the_argument_else_the_models(): void
@@ -77,7 +85,7 @@ final class PaginationTest extends TestCase
         $this->assertSame(5, $this->listing('')->cursorPaginate(5)->perPage());
     }
 
-    public function test_page_reads_like_an_id_and_a_page_past_the_cap_gives_page_1(): void
+    public function test_page_is_a_positive_whole_number_and_a_page_past_the_cap_gives_page_1(): void
     {
         $this->seedProducts(20);
         $cap = intdiv(PHP_INT_MAX, 5);
@@ -88,6 +96,9 @@ final class PaginationTest extends TestCase
         foreach (['page=9223372036854775807', 'page=' . ($cap + 1), 'page[]=2', 'page=abc', 'page=0', 'page=-1'] as $query) {
             $this->assertSame(1, $this->listing($query)->paginate(5)->currentPage(), $query);
         }
+
+        // paginate() takes a page of 0 as none given and asks Laravel's resolver, which reads the body.
+        $this->assertSame(1, $this->listing('page=0', ['page' => '2'])->paginate(5)->currentPage(), 'a body never sets the page');
     }
 
     public function test_links_keep_the_query_string(): void

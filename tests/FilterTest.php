@@ -38,16 +38,18 @@ final class FilterTest extends TestCase
         $this->assertSame('ééé', $this->listing('name=%C3%A9%C3%A9%C3%A9')->text('name', max: 3)->values['name']);
     }
 
-    public function test_int_is_a_positive_int_within_max(): void
+    public function test_int_is_a_whole_number_within_max(): void
     {
         $value = fn (string $query, int $max = PHP_INT_MAX): mixed => $this->listing($query)->int('id', max: $max)->values['id'];
 
         $this->assertSame(7, $value('id=7'));
         $this->assertSame(7, $value('id=007'));
+        $this->assertSame(0, $value('id=0'));
+        $this->assertSame(0, $value('id=00'));
         $this->assertSame(2147483647, $value('id=2147483647', 2147483647));
         $this->assertNull($value('id=2147483648', 2147483647));
 
-        foreach (['id=0', 'id=-1', 'id=%2B1', 'id=1.0', 'id=1e3', 'id=abc', 'id[]=1', 'id=9223372036854775808'] as $query) {
+        foreach (['id=-1', 'id=%2B1', 'id=1.0', 'id=1e3', 'id=abc', 'id[]=1', 'id=9223372036854775808'] as $query) {
             $this->assertNull($value($query), $query);
         }
     }
@@ -95,6 +97,7 @@ final class FilterTest extends TestCase
         $this->assertSame(['Floor'], $names('status=0'));
         $this->assertSame(['Desk'], $names('kind=book&paid=1'));
         $this->assertSame(['Desk'], $names('id=1'));
+        $this->assertSame([], $names('id=0'));
         $this->assertSame(['Floor', 'Desk'], $names('name=&paid=on&status=nope&kind=BOOK&id=abc'));
     }
 
@@ -133,14 +136,15 @@ final class FilterTest extends TestCase
         $this->assertSame([Kind::book], $this->listing('kind[]=book&kind[]=BOOK&kind[]=book')->enums('kind', Kind::class)->values['kind']);
     }
 
-    public function test_ints_read_a_list_of_positive_ints_within_max(): void
+    public function test_ints_read_a_list_of_whole_numbers_within_max(): void
     {
         $ids = fn (string $query, int $max = PHP_INT_MAX): mixed => $this->listing($query)->ints('category', max: $max)->values['category'];
 
         $this->assertSame([3, 1], $ids('category[]=3&category[]=1&category[]=003'));
         $this->assertSame([7], $ids('category=7'));
         $this->assertSame([5], $ids('category[]=5&category[]=2147483648', 2147483647));
-        $this->assertSame([], $ids('category[]=0&category[]=abc&category[]=-1&category[][]=2'));
+        $this->assertSame([0], $ids('category[]=0&category[]=00'));
+        $this->assertSame([], $ids('category[]=abc&category[]=-1&category[][]=2'));
     }
 
     /** A GET with a JSON body is not bound by max_input_vars, and SQL Server takes at most 2100 bindings. */
@@ -191,7 +195,7 @@ final class FilterTest extends TestCase
         $this->assertSame(['Desk', 'Floor', 'Wall'], $names('status[]=0&status[]=1'));
         $this->assertSame(['Desk', 'Wall'], $names('category[]=1&category[]=3'));
         $this->assertSame(['Floor', 'Wall'], $names('kind[]=film'));
-        $this->assertSame(['Desk', 'Floor', 'Wall'], $names('status[]=nope&category[]=0&kind[]=BOOK'));
+        $this->assertSame(['Desk', 'Floor', 'Wall'], $names('status[]=nope&category[]=-1&kind[]=BOOK'));
         $this->assertSame(1, $calls);
     }
 
