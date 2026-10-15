@@ -7,6 +7,7 @@ namespace Listing;
 use BackedEnum;
 use Closure;
 use Illuminate\Contracts\Database\Eloquent\Builder;
+use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Eloquent\Builder as Query;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -158,11 +159,12 @@ final class Listing
     /**
      * Rows where any of the columns contains the trimmed term as typed: `%`, `_`, `!` and `[` match themselves. Letter
      * case is as whereLike(): the column's collation on MySQL, MariaDB and SQL Server, ILIKE on PostgreSQL, ASCII case
-     * ignored on SQLite. With no columns, the key's own column, as for every other filter.
+     * ignored on SQLite. An expression, such as `DB::raw('users.email collate utf8mb4_unicode_ci')`, is searched as
+     * written. With no columns, the key's own column, as for every other filter.
      *
-     * @param  string|non-empty-list<string>|null  $columns
+     * @param  string|Expression|non-empty-list<string|Expression>|null  $columns
      */
-    public function search(string $key, string|array|null $columns = null, int $max = 255): static
+    public function search(string $key, string|Expression|array|null $columns = null, int $max = 255): static
     {
         return $this->add(Filter::search($key, $columns ?? $this->query->getModel()->qualifyColumn($key), $max));
     }

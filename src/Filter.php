@@ -9,6 +9,7 @@ use Closure;
 use DateTimeImmutable;
 use DateTimeZone;
 use Illuminate\Contracts\Database\Eloquent\Builder;
+use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Query\Grammars\PostgresGrammar;
 use Illuminate\Database\Query\Grammars\SqlServerGrammar;
 use Illuminate\Support\Str;
@@ -72,11 +73,12 @@ final readonly class Filter
     /**
      * Rows where any column contains the term; `!` escapes LIKE wildcards and `[` because it is plain text in every
      * database, and PostgreSQL columns are cast to text. Letter case is as Laravel's whereLike(): the column's collation
-     * on MySQL, MariaDB and SQL Server, ILIKE on PostgreSQL, ASCII case ignored on SQLite.
+     * on MySQL, MariaDB and SQL Server, ILIKE on PostgreSQL, ASCII case ignored on SQLite. wrap() passes an expression
+     * through as written.
      *
-     * @param  string|non-empty-list<string>  $columns
+     * @param  string|Expression|non-empty-list<string|Expression>  $columns
      */
-    public static function search(string $key, string|array $columns, int $max): self
+    public static function search(string $key, string|Expression|array $columns, int $max): self
     {
         return new self($key, fn (mixed $input): ?string => self::cleanString($input, $max), function (Builder $query, string $term) use ($columns): void {
             $pattern = '%' . strtr($term, ['!' => '!!', '%' => '!%', '_' => '!_', '[' => '![']) . '%';
@@ -84,7 +86,7 @@ final readonly class Filter
             $like = $grammar instanceof PostgresGrammar ? "(%s)::text ilike ? escape '!'" : "%s like ? escape '!'";
 
             $query->where(function (Builder $query) use ($columns, $grammar, $like, $pattern): void {
-                foreach ((array)$columns as $column) {
+                foreach (is_array($columns) ? $columns : [$columns] as $column) {
                     $query->orWhereRaw(sprintf($like, $grammar->wrap($column)), [$pattern]);
                 }
             });

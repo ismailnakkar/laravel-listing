@@ -82,6 +82,9 @@ themselves.
 - **Letter case** follows the column's collation on MySQL, MariaDB and SQL Server: their default collations ignore
   case (MySQL's and MariaDB's accents too), and a `_bin` or `_cs` column matches case exactly. PostgreSQL uses
   `ILIKE`, ASCII letters only under a `C` locale, and SQLite ignores ASCII case.
+- **An expression** in place of a column, alone or in the list, is searched as written. On a `utf8mb4_bin` column,
+  `->search('q', DB::raw('customers.email collate utf8mb4_unicode_ci'))` ignores letter case. It is raw SQL: never build
+  one from input.
 - **PostgreSQL** casts each column to text, so a number, date or uuid column can be searched.
 - **SQL Server** turns a legacy `datetime` column, which `timestamps()` creates there, into text such as
   `Oct  1 2026 12:00AM`, so a `2026-10-01` term misses. Filter days with `date()`, not `search()`.

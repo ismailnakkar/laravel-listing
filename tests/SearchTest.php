@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Listing\Tests;
 
+use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
@@ -25,11 +26,11 @@ final class SearchTest extends TestCase
     }
 
     /**
-     * @param  string|non-empty-list<string>  $columns
+     * @param  string|Expression|non-empty-list<string|Expression>  $columns
      * @param  Builder<Product>|null  $query
      * @return list<string>
      */
-    private function search(string|array $columns, string $term, ?Builder $query = null): array
+    private function search(string|Expression|array $columns, string $term, ?Builder $query = null): array
     {
         return Listing::for($query ?? Product::query(), Request::create('/?' . http_build_query(['q' => $term])))
             ->search('q', $columns)
@@ -80,6 +81,17 @@ final class SearchTest extends TestCase
 
         $this->assertSame([], $this->search('reference', 'ALICE'));
         $this->assertSame(['Binary'], $this->search('reference', 'Alice'));
+        $this->assertSame(['Binary'], $this->search(DB::raw('products.reference collate utf8mb4_unicode_ci'), 'ALICE'));
+    }
+
+    /** An expression is searched as written, alone or in a list: here the kind, else the name. */
+    public function test_an_expression_is_searched_as_written(): void
+    {
+        $kindElseName = DB::raw('coalesce(products.kind, products.name)');
+
+        $this->assertSame(['Desk'], $this->search($kindElseName, 'lamp'));
+        $this->assertSame(['Alice'], $this->search($kindElseName, 'alice'));
+        $this->assertSame(['Desk', 'Lamp shade'], $this->search([$kindElseName, 'name'], 'lamp'));
     }
 
     /** The columns are OR'ed inside their own group, so a where() before the search still holds. */
