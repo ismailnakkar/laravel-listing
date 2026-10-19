@@ -16,10 +16,7 @@ use Illuminate\Support\Str;
 use InvalidArgumentException;
 use ReflectionEnum;
 
-/**
- * @internal One declared filter: how its query-string value narrows to a type, and the condition it adds. A value that
- * does not narrow reads as null, or as an empty list for a list filter, and adds nothing.
- */
+/** @internal One filter: how its input narrows to a type, and the condition it adds. */
 final readonly class Filter
 {
     private function __construct(
@@ -38,7 +35,7 @@ final readonly class Filter
         return new self($key, fn (mixed $input): ?string => self::cleanString($input, $max), self::where($column));
     }
 
-    /** '1' is true and '0' false, because "No" is an answer, not an absent filter; anything else is null. */
+    /** '0' is false, not absent: "No" is an answer. */
     public static function flag(string $key, string|Closure $column): self
     {
         return new self($key, fn (mixed $input): ?bool => match (self::cleanString($input)) {
@@ -54,27 +51,20 @@ final readonly class Filter
         return new self($key, self::caseOf($enum), self::where($column));
     }
 
-    /**
-     * Any of the cases a list names: `?status[]=draft&status[]=live`, or one `?status=draft`.
-     *
-     * @param  class-string<BackedEnum>  $enum
-     */
+    /** @param  class-string<BackedEnum>  $enum */
     public static function enums(string $key, string $enum, string|Closure $column): self
     {
         return self::many($key, self::caseOf($enum), $column);
     }
 
-    /** Any of the whole numbers from 0 to $max a list names: `?category[]=3&category[]=7`, or one `?category=3`. */
     public static function ints(string $key, string|Closure $column, int $max): self
     {
         return self::many($key, fn (mixed $input): ?int => self::naturalInt($input, $max), $column);
     }
 
     /**
-     * Rows where any column contains the term; `!` escapes LIKE wildcards and `[` because it is plain text in every
-     * database, and PostgreSQL columns are cast to text. Letter case is as Laravel's whereLike(): the column's collation
-     * on MySQL, MariaDB and SQL Server, ILIKE on PostgreSQL, ASCII case ignored on SQLite. wrap() passes an expression
-     * through as written.
+     * `!` is the escape as it is plain text in every database; `[` is a wildcard on SQL Server. PostgreSQL casts each
+     * column to text, so a number, date or uuid can be searched.
      *
      * @param  string|Expression|non-empty-list<string|Expression>  $columns
      */
@@ -94,8 +84,8 @@ final readonly class Filter
     }
 
     /**
-     * A day as `<input type="date">` sends it, 1753-01-01 to 9999-12-31; the operator compares whole days. The range
-     * is half-open and bound as strings, not whereDate(), so an index serves it. A closure gets the day string.
+     * `Y-m-d` from 1753-01-01, where SQL Server's datetime starts. Half-open string bounds, not whereDate(), so an
+     * index serves it.
      *
      * @param  '='|'>='|'<='  $operator
      */
@@ -128,10 +118,7 @@ final readonly class Filter
         });
     }
 
-    /**
-     * The trimmed string, or null when empty, too long, not a string, or holding invalid UTF-8 or a NUL, which
-     * databases mishandle.
-     */
+    /** Invalid UTF-8 and NUL read as null: databases mishandle them. */
     public static function cleanString(mixed $input, int $max = 255): ?string
     {
         if (! is_string($input) || ! mb_check_encoding($input, 'UTF-8') || str_contains($input, "\0")) {
@@ -144,8 +131,8 @@ final readonly class Filter
     }
 
     /**
-     * A whole number from 0 to $max, or null: digits only, because (int) 'nope' is 0, and in range, because (int)
-     * saturates. Leading zeros are stripped, as FILTER_VALIDATE_INT rejects them.
+     * Digits only, as (int) 'nope' is 0; range-checked, as (int) saturates; leading zeros stripped, as
+     * FILTER_VALIDATE_INT rejects them.
      */
     private static function naturalInt(mixed $input, int $max): ?int
     {
@@ -155,15 +142,14 @@ final readonly class Filter
         return ctype_digit($digits) ? filter_var(ltrim($digits, '0') ?: '0', FILTER_VALIDATE_INT, $range) : null;
     }
 
-    /** naturalInt() without 0, as `?page` reads. */
     public static function positiveInt(mixed $input, int $max = PHP_INT_MAX): ?int
     {
         return self::naturalInt($input, $max) ?: null;
     }
 
     /**
-     * Reads the case a value names. An int-backed enum is read from digits only: (int) 'nope' is 0, and 0 can be a case.
-     * A class that is not a backed enum throws here, where the screen declares it, not when a value first arrives.
+     * An int-backed enum reads digits only, as (int) 'nope' is 0 and 0 can be a case. A pure enum throws here, at
+     * declaration, not on the first value.
      *
      * @param  class-string<BackedEnum>  $enum
      */
@@ -188,11 +174,7 @@ final readonly class Filter
         };
     }
 
-    /**
-     * A list filter: each value read by $one, the unreadable dropped, duplicates removed, matched with whereIn(). The
-     * value is the list, empty when nothing reads. More than 1000 values read as empty: a backstop for a server that
-     * raises max_input_vars, since SQL Server takes at most 2100 bindings.
-     */
+    /** Over 1000 values read as empty: a backstop for a raised max_input_vars, as SQL Server takes 2100 bindings. */
     private static function many(string $key, Closure $one, string|Closure $column): self
     {
         return new self($key, function (mixed $input) use ($one): array {
@@ -211,13 +193,11 @@ final readonly class Filter
         }, $column instanceof Closure ? $column : fn (Builder $query, array $values) => $query->whereIn($column, $values));
     }
 
-    /** The input narrowed to this filter's type, or null; for a list filter, the list. */
     public function read(mixed $input): mixed
     {
         return ($this->read)($input);
     }
 
-    /** Adds this filter's condition for a narrowed value; null or an empty list adds nothing. */
     public function apply(Builder $query, mixed $value): void
     {
         if ($value !== null && $value !== []) {
@@ -225,7 +205,6 @@ final readonly class Filter
         }
     }
 
-    /** The column as written, or the developer's closure in its place. */
     private static function where(string|Closure $column): Closure
     {
         return $column instanceof Closure ? $column : fn (Builder $query, mixed $value) => $query->where($column, $value);

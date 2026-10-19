@@ -9,17 +9,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Orchestra\Testbench\TestCase as Testbench;
 
-/**
- * Testbench on in-memory SQLite by default; Laravel's own DB_CONNECTION and DB_* variables run the same suite on a
- * server database, so tables are dropped first and nothing pins a connection.
- */
+/** In-memory SQLite unless DB_CONNECTION and DB_* name a server database, hence the tables are dropped first. */
 abstract class TestCase extends Testbench
 {
     protected function setUp(): void
     {
         parent::setUp();
 
-        // Each test boots a new app; without this its server connection stays open, and PostgreSQL's 100 run out.
+        // Each test boots a new app; an open connection per test exhausts PostgreSQL's 100.
         $this->beforeApplicationDestroyed(fn () => DB::disconnect());
 
         Schema::dropAllTables();

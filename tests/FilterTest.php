@@ -107,7 +107,7 @@ final class FilterTest extends TestCase
         Product::create(['name' => 'Floor', 'price' => 10]);
         $calls = 0;
 
-        // A plain closure: an arrow function would capture $calls by value, and the count would stay 0.
+        // Not an arrow function: it would capture $calls by value.
         $listing = function (string $query) use (&$calls): Listing {
             return $this->listing($query)->int('min', function (Builder $q, int $min) use (&$calls): void {
                 $calls++;
@@ -120,7 +120,6 @@ final class FilterTest extends TestCase
         $this->assertSame(1, $calls);
     }
 
-    /** On a self-join every bare column is ambiguous, so this fails unless each defaulted column names the model's table. */
     public function test_enums_read_a_list_of_cases_and_drop_the_rest(): void
     {
         $status = fn (string $query): mixed => $this->listing($query)->enums('status', Status::class)->values['status'];
@@ -147,7 +146,6 @@ final class FilterTest extends TestCase
         $this->assertSame([], $ids('category[]=abc&category[]=-1&category[][]=2'));
     }
 
-    /** A GET with a JSON body is not bound by max_input_vars, and SQL Server takes at most 2100 bindings. */
     public function test_a_list_of_more_than_1000_values_reads_as_empty(): void
     {
         $ids = fn (int $count): mixed => Listing::for(Product::query(), Request::create('/', 'GET', ['category' => array_map(strval(...), range(1, $count))]))
@@ -157,7 +155,7 @@ final class FilterTest extends TestCase
         $this->assertSame([], $ids(1001));
     }
 
-    /** A list page's state is its URL: a JSON or form body never sets a filter, a sort or a page. */
+    /** A list page's state is its URL. */
     public function test_only_the_query_string_is_read(): void
     {
         $json = Request::create('/?name=Desk', 'GET', [], [], [], ['CONTENT_TYPE' => 'application/json'], (string)json_encode(['category' => ['1', '2'], 'name' => 'Lamp']));
@@ -199,6 +197,7 @@ final class FilterTest extends TestCase
         $this->assertSame(1, $calls);
     }
 
+    /** On a self-join every bare column is ambiguous. */
     public function test_a_column_left_to_default_is_the_models_own_on_a_join(): void
     {
         Product::create(['name' => 'Desk', 'status' => 1, 'paid' => true, 'day' => '2026-10-01']);
@@ -229,7 +228,7 @@ final class FilterTest extends TestCase
         $this->assertSame(['Bob'], $members->getCollection()->pluck('name')->all());
         $this->assertSame('editor', $members->getCollection()->first()?->pivot?->role);
 
-        // A column passed bare is used as written: `role` is only on the pivot, so it resolves there, not on `members`.
+        // A bare column is used as written: `role` is only on the pivot, so it resolves there.
         $bare = Listing::for($team->members(), $request)->text('role', 'role')->paginate();
         $this->assertSame(['Bob'], $bare->getCollection()->pluck('name')->all());
     }

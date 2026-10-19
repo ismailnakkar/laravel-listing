@@ -47,7 +47,7 @@ final class SearchTest extends TestCase
         $this->assertSame(['50!'], $this->search('name', '50!'));
     }
 
-    /** `[` opens a character set on SQL Server only, so no row test on the other engines can tell it is escaped. */
+    /** `[` is a wildcard on SQL Server only, so only the binding shows it is escaped. */
     public function test_the_pattern_escapes_a_bracket_for_sql_server(): void
     {
         $query = Listing::for(Product::query(), Request::create('/?q=%5Bx%5D'))->search('q', 'name')->apply();
@@ -61,7 +61,7 @@ final class SearchTest extends TestCase
         $this->assertSame(['Alice'], $this->search('name', 'aLICE'));
     }
 
-    /** The column is compared as stored, so its collation decides letter case and no function runs per row. */
+    /** So the column's collation decides letter case. */
     public function test_the_column_is_not_lowercased(): void
     {
         $query = Listing::for(Product::query(), Request::create('/?q=Alice'))->search('q', 'name')->apply();
@@ -69,7 +69,6 @@ final class SearchTest extends TestCase
         $this->assertStringNotContainsStringIgnoringCase('lower(', $query->toSql());
     }
 
-    /** A `_bin` column matches letter case exactly, as its collation says. */
     public function test_a_binary_collated_column_matches_letter_case_exactly(): void
     {
         if (! in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
@@ -84,7 +83,6 @@ final class SearchTest extends TestCase
         $this->assertSame(['Binary'], $this->search(DB::raw('products.reference collate utf8mb4_unicode_ci'), 'ALICE'));
     }
 
-    /** An expression is searched as written, alone or in a list: here the kind, else the name. */
     public function test_an_expression_is_searched_as_written(): void
     {
         $kindElseName = DB::raw('coalesce(products.kind, products.name)');
@@ -94,7 +92,7 @@ final class SearchTest extends TestCase
         $this->assertSame(['Desk', 'Lamp shade'], $this->search([$kindElseName, 'name'], 'lamp'));
     }
 
-    /** The columns are OR'ed inside their own group, so a where() before the search still holds. */
+    /** So a where() before the search still holds. */
     public function test_any_of_the_columns_may_match_inside_their_own_group(): void
     {
         $this->assertSame(['Lamp shade'], $this->search('name', 'lamp'));
@@ -102,7 +100,7 @@ final class SearchTest extends TestCase
         $this->assertSame(['Lamp shade'], $this->search(['name', 'kind'], 'lamp', Product::query()->where('kind', 'textile')));
     }
 
-    /** As for every other filter, no columns is the key's own column, qualified, so a join with its own `name` holds. */
+    /** Qualified, so a join with its own `name` is not ambiguous. */
     public function test_with_no_columns_the_key_is_the_models_own_column(): void
     {
         $query = Product::query()->join('products as twin', 'twin.id', '=', 'products.id')->select('products.*');
@@ -110,7 +108,6 @@ final class SearchTest extends TestCase
         $this->assertSame(['Lamp shade'], Listing::for($query, Request::create('/?name=lamp'))->search('name')->apply()->pluck('name')->all());
     }
 
-    /** PostgreSQL has no ILIKE for a number, so the column is cast to text there; the PostgreSQL CI leg pins it. */
     public function test_a_number_column_can_be_searched(): void
     {
         Product::create(['name' => 'Priced', 'price' => 512]);

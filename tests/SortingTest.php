@@ -44,7 +44,7 @@ final class SortingTest extends TestCase
         $this->assertSame('-id', $this->listing()->sort);
     }
 
-    /** Ties break on the qualified key in the same direction, so one index on the column and the key serves it. */
+    /** Ties break on the key in the same direction, so one index on the column and the key serves it. */
     public function test_sort_reads_an_allowed_name_in_either_direction(): void
     {
         $this->seedProducts();
@@ -83,7 +83,7 @@ final class SortingTest extends TestCase
         $this->assertSame('-id', $this->listing('sort=price')->sort);
     }
 
-    /** The hidden input sends `sort=name` back; it is not on the allowlist, so the same default applies again. */
+    /** The hidden input sends `sort=name` back, which is off the allowlist and gives the same default. */
     public function test_a_default_outside_the_allowlist_orders_by_the_models_column(): void
     {
         $this->seedProducts();
@@ -107,11 +107,11 @@ final class SortingTest extends TestCase
         $byCategory = Listing::for(clone $query, Request::create('/?sort=category'))->sorts(category: 'categories.name');
         $this->assertSame(['Desk', 'Floor', 'Wall', 'Table'], $byCategory->apply()->pluck('name')->all());
 
-        // The default resolves through the aliases too; as `products.category` it would fail on a missing column.
+        // A default resolves through the aliases too, not as a missing `products.category`.
         $aliasDefault = Listing::for(clone $query, Request::create('/'))->sorts(category: 'categories.name')->defaultSort('-category');
         $this->assertSame(['Table', 'Wall', 'Floor', 'Desk'], $aliasDefault->apply()->pluck('name')->all());
 
-        // Both tables have `name`; a positional sort orders by the model's own, never by an ambiguous bare name.
+        // Both tables have `name`; a positional sort orders by the model's.
         $byName = Listing::for(Product::query()->join('categories', 'categories.id', '=', 'products.category_id')->select('products.id'), Request::create('/?sort=name'))->sorts('name');
         $this->assertSame([1, 2, 4, 3], $byName->apply()->pluck('id')->map(intval(...))->all());
     }
@@ -133,7 +133,6 @@ final class SortingTest extends TestCase
         $this->assertSame('owner', $members->get()->first()?->pivot?->role);
     }
 
-    /** SQL Server rejects a column listed twice in ORDER BY (error 169), so a sort by the key orders by it once. */
     public function test_a_sort_by_the_key_orders_by_it_once(): void
     {
         $sql = Listing::for(Product::on('sqlsrv'), Request::create('/'))->apply()->toSql();

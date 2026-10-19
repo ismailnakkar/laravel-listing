@@ -22,8 +22,9 @@ use LogicException;
 use UnexpectedValueException;
 
 /**
- * A Blade list page's query: the filters and sorts its query string may set, read leniently, so that no URL bounces
- * the page. Only the query string is read, never the body. Build it with for(), given the current request.
+ * A list page's filters and sorts, read leniently from the query string only, so no URL bounces the page. A filter's
+ * column defaults to the key on the model's table; a closure in its place runs only on a value, and gets the query
+ * and the value.
  *
  * @template TModel of Model
  */
@@ -32,17 +33,16 @@ final class Listing
     use Conditionable;
 
     /**
-     * Each declared key's narrowed value, what the filter form refills from: null when none reads, or for enums() and
-     * ints() a list, empty when none reads.
+     * Each key's narrowed value, for refilling the form: null when none reads; enums() and ints() hold a list.
      *
      * @var array<string, mixed>
      */
     public private(set) array $values = [];
 
-    /** The resolved `?sort=` value, such as `-created_at`: what the form's hidden input carries. */
+    /** The resolved `?sort=`, such as `-created_at`, for the form's hidden input. */
     public private(set) string $sort;
 
-    /** @var array<string, string> each name `?sort=` may use, and the column it orders by */
+    /** @var array<string, string> sort name => column */
     private array $sorts = [];
 
     /** @var array<string, Filter> */
@@ -62,7 +62,7 @@ final class Listing
     }
 
     /**
-     * Lists an Eloquent query, or a relation such as `$team->members()`, which keeps its pivot.
+     * Pass the current request; a relation's rows keep their pivot.
      *
      * @template TListed of Model
      *
@@ -75,8 +75,8 @@ final class Listing
     }
 
     /**
-     * Gives every other paginator the listing's page rule (query string only, an offset that fits an int); call it
-     * once in a service provider's boot().
+     * Makes Laravel's own paginators read `?page` as a listing does, from the query string only, for page sizes up to
+     * 10,000. Call it once, in a service provider's boot().
      */
     public static function protectAllPages(): void
     {
@@ -86,7 +86,7 @@ final class Listing
     }
 
     /**
-     * A whole number from 0 to $max, matched exactly. In place of the column, a closure gets the query and the int.
+     * A whole number from 0 to $max, matched exactly.
      *
      * @param  string|(Closure(Query<*>, int): mixed)|null  $column
      */
@@ -96,8 +96,7 @@ final class Listing
     }
 
     /**
-     * The trimmed string, matched exactly; empty is null. In place of the column, a closure gets the query and the
-     * string.
+     * The trimmed string, matched exactly; empty is null.
      *
      * @param  string|(Closure(Query<*>, string): mixed)|null  $column
      */
@@ -107,7 +106,7 @@ final class Listing
     }
 
     /**
-     * '1' as true, '0' as false, matched exactly. In place of the column, a closure gets the query and the bool.
+     * '1' as true, '0' as false, matched exactly.
      *
      * @param  string|(Closure(Query<*>, bool): mixed)|null  $column
      */
@@ -117,7 +116,7 @@ final class Listing
     }
 
     /**
-     * The backed case, matched exactly. In place of the column, a closure gets the query and the case.
+     * The backed case, matched exactly; an int-backed enum reads digits only.
      *
      * @template TEnum of BackedEnum
      *
@@ -130,9 +129,7 @@ final class Listing
     }
 
     /**
-     * Any of the backed cases a list names, `?status[]=draft&status[]=live` or one `?status=draft`; values that name no
-     * case are dropped. The value is a list of cases, empty when none reads, so the view can test it with in_array(). In
-     * place of the column, a closure gets the query and the non-empty list.
+     * Any of the backed cases a list names (`?status[]=draft&status[]=live`, or `?status=draft`); the rest are dropped.
      *
      * @template TEnum of BackedEnum
      *
@@ -145,9 +142,8 @@ final class Listing
     }
 
     /**
-     * Any of the whole numbers from 0 to $max a list names, `?category[]=3&category[]=7` or one `?category=3`; anything
-     * else is dropped. The value is a list of ints, empty when none reads. In place of the column, a closure gets the
-     * query and the non-empty list.
+     * Any of the whole numbers from 0 to $max a list names (`?category[]=3&category[]=7`, or `?category=3`); the rest
+     * are dropped.
      *
      * @param  string|(Closure(Query<*>, non-empty-list<int>): mixed)|null  $column
      */
@@ -157,10 +153,9 @@ final class Listing
     }
 
     /**
-     * Rows where any of the columns contains the trimmed term as typed: `%`, `_`, `!` and `[` match themselves. Letter
-     * case is as whereLike(): the column's collation on MySQL, MariaDB and SQL Server, ILIKE on PostgreSQL, ASCII case
-     * ignored on SQLite. An expression, such as `DB::raw('users.email collate utf8mb4_unicode_ci')`, is searched as
-     * written. With no columns, the key's own column, as for every other filter.
+     * Rows where any column contains the trimmed term literally; an expression is searched as written. Letter case is
+     * as whereLike(): the collation on MySQL, MariaDB and SQL Server, ILIKE on PostgreSQL, ASCII case ignored on
+     * SQLite.
      *
      * @param  string|Expression|non-empty-list<string|Expression>|null  $columns
      */
@@ -170,8 +165,7 @@ final class Listing
     }
 
     /**
-     * A day, `2026-10-01`, compared as whole days: '=' that day, '>=' on or after it, '<=' on or before it. A range is
-     * two of them on one column. In place of the column, a closure gets the query and the day string.
+     * A day, `2026-10-01`, compared whole: '=' that day, '>=' from it, '<=' up to it; a range is two on one column.
      *
      * @param  string|(Closure(Query<*>, string): mixed)|null  $column
      * @param  '='|'>='|'<='  $operator
@@ -182,8 +176,8 @@ final class Listing
     }
 
     /**
-     * Adds names `?sort=` may use. A positional name is a column of the model's table; a named argument names any other
-     * column or a select alias: `sorts('total', customer: 'customers.name')`. A name given again takes its new column.
+     * Adds names `?sort=` may use: a positional name is a column of the model's table, a named one maps to any column
+     * or select alias (`sorts('total', customer: 'customer_name')`). A name given again takes its new column.
      */
     public function sorts(string ...$columns): static
     {
@@ -202,7 +196,7 @@ final class Listing
         return $this;
     }
 
-    /** `-created_at` for newest first. Until it is called, the default is the model's key, descending. */
+    /** `-created_at` for newest first; without it, the model's key descending. */
     public function defaultSort(string $sort): static
     {
         $this->default = Sort::parse($sort);
@@ -212,8 +206,7 @@ final class Listing
     }
 
     /**
-     * The filtered, sorted query, unpaged: a clone of what for() was given, so calling it twice never doubles a
-     * filter. A query gives an Eloquent builder; a relation gives the relation, so its pivot columns still load.
+     * The filtered, sorted query, unpaged, on a clone; a relation stays a relation, so its pivot still loads.
      *
      * @return Query<TModel>|Relation<TModel, *, *>
      */
@@ -232,9 +225,7 @@ final class Listing
     }
 
     /**
-     * The filtered, sorted page, its links keeping the query string. The page size is $perPage, else, for null or 0 as
-     * in Laravel, the model's. `?page` reads as a positive whole number up to the last page whose offset fits an int,
-     * so a huge page shows the first one instead of overflowing.
+     * Links keep the query string; a null or 0 $perPage is the model's, as in Laravel.
      *
      * @return LengthAwarePaginator<int, TModel>
      */
@@ -247,8 +238,7 @@ final class Listing
     }
 
     /**
-     * The filtered, sorted page without a total, so with no COUNT query. The page size and `?page` read as in
-     * paginate().
+     * As paginate(), without the COUNT query.
      *
      * @return Paginator<int, TModel>
      */
@@ -261,8 +251,7 @@ final class Listing
     }
 
     /**
-     * The filtered, sorted page by cursor; a cursor the sort or column cannot take (SQLSTATE class 22) shows the first
-     * page, any other database error throws.
+     * A cursor the sort or column cannot take (SQLSTATE class 22) shows the first page; other database errors throw.
      *
      * @return CursorPaginator<int, TModel>
      */
@@ -283,9 +272,8 @@ final class Listing
     }
 
     /**
-     * A header's link: the request's URL with every query parameter kept as sent, `sort` set, and `page` and `cursor`
-     * removed, so that a new order never pairs with an old page or cursor. The sorted column flips; another starts
-     * descending.
+     * A header's link: the current URL with `sort` flipped, or set to $name descending, and `page` and `cursor`
+     * dropped, so a new order never pairs with an old page.
      */
     public function sortUrl(string $name): string
     {
@@ -306,22 +294,18 @@ final class Listing
         return $this->current->direction === 'asc' ? 'ascending' : 'descending';
     }
 
-    /**
-     * The column a filter compares: the one given, as written, else the key as a column of the model's table, the same
-     * as a positional sort, so a filter left to its default stays unambiguous on a join.
-     */
+    /** Qualified, like a positional sort, so a defaulted column stays unambiguous on a join. */
     private function column(string $key, string|Closure|null $column): string|Closure
     {
         return $column ?? $this->query->getModel()->qualifyColumn($key);
     }
 
-    /** `?page` as a positive whole number up to the last page whose offset fits an int, else the first page. */
+    /** Capped so a huge `?page` cannot overflow the offset. */
     private function page(int $perPage): int
     {
         return Filter::positiveInt($this->request->query('page'), intdiv(PHP_INT_MAX, $perPage)) ?? 1;
     }
 
-    /** One filter per key: a second declaration is a mistake, and fails where the screen makes it. */
     private function add(Filter $filter): static
     {
         if (array_key_exists($filter->key, $this->filters)) {
@@ -334,7 +318,6 @@ final class Listing
         return $this;
     }
 
-    /** `?sort=` when the allowlist has its name; the default for anything else. */
     private function resolveSort(): void
     {
         $input = Filter::cleanString($this->request->query('sort'));

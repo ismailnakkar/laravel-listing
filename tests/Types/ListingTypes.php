@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-// PHPStan reads this file (phpstan.neon); PHPUnit skips it. Each assertType() fails analysis when the type drifts.
+// Read by PHPStan only (phpstan.neon): an assertType() fails analysis when the type drifts.
 
 namespace Listing\Tests\Types;
 

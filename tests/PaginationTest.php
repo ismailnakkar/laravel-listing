@@ -27,7 +27,7 @@ final class PaginationTest extends TestCase
     }
 
     /**
-     * Laravel's paginators read the container's request, so a listing built from another one binds it.
+     * Laravel's paginators read the container's request, so bind it.
      *
      * @param  array<string, string>  $body
      */
@@ -39,11 +39,7 @@ final class PaginationTest extends TestCase
         return Listing::for(Product::query(), $request);
     }
 
-    /**
-     * A plain paginator, not a listing, on a request carrying this query string and this body.
-     *
-     * @param  array<string, string>  $body
-     */
+    /** @param  array<string, string>  $body */
     private function plainPage(string $query, array $body = []): int
     {
         $this->app->instance('request', Request::create('/products?' . $query, $body === [] ? 'GET' : 'POST', $body));
@@ -133,7 +129,7 @@ final class PaginationTest extends TestCase
         $this->assertSame('owner', $cursor->getCollection()->first()?->pivot?->role);
     }
 
-    /** Laravel's own resolver takes ?page=9223372036854775807, a 500 on PHP 8.5; and a simple page never counts. */
+    /** Laravel's own resolver takes ?page=9223372036854775807, a 500 on PHP 8.5. */
     public function test_simple_paginate_caps_the_page_keeps_the_query_string_and_never_counts(): void
     {
         $this->seedProducts(20);
@@ -151,7 +147,6 @@ final class PaginationTest extends TestCase
         }
     }
 
-    /** A cursor from another order, one forged to hold a null, garbage or an array: each shows the first page. */
     public function test_cursor_paginate_pages_by_cursor_and_shows_the_first_page_for_a_bad_cursor(): void
     {
         $this->seedProducts(7);
@@ -186,7 +181,7 @@ final class PaginationTest extends TestCase
         $this->assertLessThanOrEqual(3, $page->count());
     }
 
-    /** @return array{int, mixed} the query count and the outcome, with the first query failing as the SQLSTATE says */
+    /** @return array{int, mixed} the query count, and the page or the exception */
     private function cursorWhenFirstQueryFails(string $sqlState): array
     {
         $this->seedProducts(4);
@@ -252,7 +247,6 @@ final class PaginationTest extends TestCase
         $this->assertSame(['Z1,Z2', 'M1,M2', 'A1,A2'], $pages);
     }
 
-    /** Like every other parameter, the cursor comes from the query string, never a JSON body. */
     public function test_cursor_paginate_reads_the_cursor_from_the_query_string_only(): void
     {
         $this->seedProducts(7);

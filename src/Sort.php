@@ -6,7 +6,7 @@ namespace Listing;
 
 use Illuminate\Contracts\Database\Eloquent\Builder;
 
-/** @internal `?sort=` as a name and a direction: `total` is ascending, `-total` descending. */
+/** @internal `?sort=`: `total` is ascending, `-total` descending. */
 final readonly class Sort
 {
     /** @param  'asc'|'desc'  $direction */
@@ -20,7 +20,6 @@ final readonly class Sort
         return str_starts_with($sort, '-') ? new self(substr($sort, 1), 'desc') : new self($sort, 'asc');
     }
 
-    /** What a header for $name links to: this sort flipped, or $name starting descending. */
     public function toggled(string $name): self
     {
         if ($name !== $this->name) {
@@ -31,9 +30,8 @@ final readonly class Sort
     }
 
     /**
-     * Orders by $column in place of any order the query had, so a relation's own `latest()` cannot outrank the header,
-     * then by the model's qualified key in the same direction, so rows with equal values keep their place from one
-     * page to the next.
+     * Replaces any order, so a relation's own `latest()` cannot outrank the header, then breaks ties on the key so rows
+     * keep their place across pages; the key goes in once, as SQL Server rejects a repeated ORDER BY column.
      */
     public function apply(Builder $query, string $column): void
     {

@@ -12,7 +12,7 @@ use UnhandledMatchError;
 
 final class DateTest extends TestCase
 {
-    /** P1 to P4 straddle 2026-10-01 at both of its edges; Undated has no date at all. */
+    /** P1 to P4 straddle both edges of 2026-10-01; Undated has no date. */
     private function seedProducts(): void
     {
         foreach ([
@@ -43,7 +43,7 @@ final class DateTest extends TestCase
         return Listing::for(Product::query(), Request::create('/?' . http_build_query(['on' => $input])))->date('on')->values['on'];
     }
 
-    /** `day` holds `Y-m-d`, `day_cast` what Eloquent's date cast writes (`Y-m-d 00:00:00` on SQLite), `at` milliseconds. */
+    /** `day` is `Y-m-d`, `day_cast` as Eloquent's date cast writes it (`Y-m-d 00:00:00` on SQLite), `at` has ms. */
     public function test_whole_days_on_every_kind_of_date_column(): void
     {
         $this->seedProducts();
@@ -94,7 +94,7 @@ final class DateTest extends TestCase
         $this->assertSame(['20261001', '20261002'], $query->getBindings());
     }
 
-    /** Samoa went from 2011-12-29 to 2011-12-31; the bounds are calendar days, whatever the app's time zone. */
+    /** Samoa skipped 2011-12-30. */
     public function test_day_arithmetic_ignores_the_app_time_zone(): void
     {
         foreach (['P1' => '2011-12-29', 'P2' => '2011-12-30', 'P3' => '2011-12-31'] as $name => $day) {
