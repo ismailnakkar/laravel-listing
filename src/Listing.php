@@ -62,16 +62,17 @@ final class Listing
     }
 
     /**
-     * Pass the current request; a relation's rows keep their pivot.
+     * Reads the request given, else the current one; its page links follow the same request. A relation's rows keep
+     * their pivot.
      *
      * @template TListed of Model
      *
      * @param  Query<TListed>|Relation<TListed, *, *>  $query
      * @return self<TListed>
      */
-    public static function for(Builder $query, Request $request): self
+    public static function for(Builder $query, ?Request $request = null): self
     {
-        return new self($query, $request);
+        return new self($query, $request ?? request());
     }
 
     /**
@@ -234,7 +235,7 @@ final class Listing
         $query = $this->apply();
         $perPage = $perPage ?: $query->getModel()->getPerPage();
 
-        return $query->paginate($perPage, ['*'], 'page', $this->page($perPage))->withQueryString();
+        return $this->links($query->paginate($perPage, ['*'], 'page', $this->page($perPage)));
     }
 
     /**
@@ -247,7 +248,7 @@ final class Listing
         $query = $this->apply();
         $perPage = $perPage ?: $query->getModel()->getPerPage();
 
-        return $query->simplePaginate($perPage, ['*'], 'page', $this->page($perPage))->withQueryString();
+        return $this->links($query->simplePaginate($perPage, ['*'], 'page', $this->page($perPage)));
     }
 
     /**
@@ -261,14 +262,14 @@ final class Listing
         $cursor = $this->request->query('cursor');
 
         try {
-            return $this->apply()->cursorPaginate($perPage, ['*'], 'cursor', is_string($cursor) ? $cursor : '')->withQueryString();
+            return $this->links($this->apply()->cursorPaginate($perPage, ['*'], 'cursor', is_string($cursor) ? $cursor : ''));
         } catch (UnexpectedValueException|InvalidArgumentException) {
             // A cursor from another sort order, or one holding a null.
         } catch (QueryException $e) {
             throw_unless(str_starts_with((string)$e->getCode(), '22'), $e);
         }
 
-        return $this->apply()->cursorPaginate($perPage, ['*'], 'cursor', '')->withQueryString();
+        return $this->links($this->apply()->cursorPaginate($perPage, ['*'], 'cursor', ''));
     }
 
     /**
@@ -298,6 +299,19 @@ final class Listing
     private function column(string $key, string|Closure|null $column): string|Closure
     {
         return $column ?? $this->query->getModel()->qualifyColumn($key);
+    }
+
+    /**
+     * Links on the listing's request, with its query string, not the container's.
+     *
+     * @template TPaginator of LengthAwarePaginator<int, TModel>|Paginator<int, TModel>|CursorPaginator<int, TModel>
+     *
+     * @param  TPaginator  $paginator
+     * @return TPaginator
+     */
+    private function links(LengthAwarePaginator|Paginator|CursorPaginator $paginator): LengthAwarePaginator|Paginator|CursorPaginator
+    {
+        return $paginator->withPath($this->request->url())->appends($this->request->query());
     }
 
     /** Capped so a huge `?page` cannot overflow the offset. */

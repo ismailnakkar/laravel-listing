@@ -222,7 +222,6 @@ final class FilterTest extends TestCase
         $team->members()->attach(Member::create(['name' => 'Bob']), ['role' => 'editor']);
 
         $request = Request::create('/?role=editor');
-        $this->app->instance('request', $request);
         $members = Listing::for($team->members(), $request)->text('role', 'member_team.role')->paginate();
 
         $this->assertSame(['Bob'], $members->getCollection()->pluck('name')->all());

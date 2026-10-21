@@ -27,16 +27,13 @@ final class PaginationTest extends TestCase
     }
 
     /**
-     * Laravel's paginators read the container's request, so bind it.
+     * Not bound in the container, so the links can only come from the listing's request.
      *
      * @param  array<string, string>  $body
      */
     private function listing(string $query, array $body = []): Listing
     {
-        $request = Request::create('/products?' . $query, $body === [] ? 'GET' : 'POST', $body);
-        $this->app->instance('request', $request);
-
-        return Listing::for(Product::query(), $request);
+        return Listing::for(Product::query(), Request::create('/products?' . $query, $body === [] ? 'GET' : 'POST', $body));
     }
 
     /** @param  array<string, string>  $body */
@@ -113,7 +110,6 @@ final class PaginationTest extends TestCase
         }
 
         $request = Request::create('/?page=2');
-        $this->app->instance('request', $request);
         $page = Listing::for($team->members(), $request)->paginate(5);
 
         $this->assertSame(7, $page->total());
@@ -237,7 +233,6 @@ final class PaginationTest extends TestCase
 
         do {
             $request = Request::create('/products?sort=category&cursor=' . $cursor);
-            $this->app->instance('request', $request);
             $query = Product::query()->join('categories', 'categories.id', '=', 'products.category_id')->select('products.*', 'categories.name as category_name');
             $page = Listing::for($query, $request)->sorts(category: 'category_name')->cursorPaginate(2);
             $pages[] = implode(',', $page->getCollection()->pluck('name')->all());
@@ -253,7 +248,6 @@ final class PaginationTest extends TestCase
         $next = $this->listing('sort=price')->sorts('price', 'name')->cursorPaginate(3)->nextCursor()?->encode();
 
         $json = Request::create('/products?sort=price', 'GET', [], [], [], ['CONTENT_TYPE' => 'application/json'], (string)json_encode(['cursor' => $next]));
-        $this->app->instance('request', $json);
         $page = Listing::for(Product::query(), $json)->sorts('price', 'name')->cursorPaginate(3);
 
         $this->assertSame(['P3', 'P6', 'P1'], $page->getCollection()->pluck('name')->all());

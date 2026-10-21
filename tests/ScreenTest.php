@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Listing\Tests;
 
-use Illuminate\Http\Request;
 use Illuminate\Testing\TestResponse;
 use Listing\Listing;
 use Listing\Tests\Fixtures\Kind;
@@ -22,8 +21,8 @@ final class ScreenTest extends TestCase
 
     protected function defineRoutes($router): void
     {
-        $router->get('/products', function (Request $request) {
-            $listing = Listing::for(Product::query(), $request)
+        $router->get('/products', function () {
+            $listing = Listing::for(Product::query())
                 ->search('q', ['name', 'reference'])
                 ->enum('status', Status::class)
                 ->enums('kind', Kind::class)

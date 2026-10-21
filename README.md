@@ -16,16 +16,15 @@ Requires PHP 8.4 and Laravel 13. No service provider, config or views.
 ```php
 use App\Enums\OrderStatus;
 use App\Models\Order;
-use Illuminate\Http\Request;
 use Listing\Listing;
 
-public function index(Request $request)
+public function index()
 {
     $orders = Order::query()
         ->join('customers', 'customers.id', '=', 'orders.customer_id')
         ->select('orders.*', 'customers.name as customer_name');
 
-    $listing = Listing::for($orders, $request)
+    $listing = Listing::for($orders)
         ->enum('status', OrderStatus::class)
         ->flag('paid')
         ->search('q', ['orders.reference', 'customers.email'])
@@ -41,8 +40,9 @@ public function index(Request $request)
 `?status=shipped&paid=0&q=lamp&from=2026-10-01&sort=-total&page=2` is the second page of unpaid, shipped orders
 matching "lamp" since October 1st, largest first.
 
-Pass the current request: paginator links are built from the container's. Only the query string is read; a form or
-JSON body never sets a filter, a sort or a page. `sort`, `page` and `cursor` are taken, so do not use them as keys.
+The listing reads the current request, or one passed second, and its page links follow the same request. Only the query
+string is read: a form or JSON body never sets a filter, a sort or a page. `sort`, `page` and `cursor` are taken, so do
+not use them as keys.
 
 ### Filters
 
@@ -102,7 +102,7 @@ PostgreSQL, the index must cover the column and the key.
 `Listing::for()` takes a relation too, and pages it as itself, so each row keeps its `pivot`:
 
 ```php
-Listing::for($team->members(), $request)->text('role', 'team_user.role')->sorts('name');
+Listing::for($team->members())->text('role', 'team_user.role')->sorts('name');
 ```
 
 ### Custom filters
@@ -209,7 +209,8 @@ once, keep it in a declared property (`private ?Listing $listing = null;`, then
 
 ## Testing
 
-Apps need no fake or setup. The package's suite:
+Apps need no fake or setup; outside an HTTP call, pass the request: `Listing::for($query, Request::create('/?q=lamp'))`.
+The package's suite:
 
 ```bash
 composer check    # pint --test, phpstan, then phpunit on in-memory SQLite
