@@ -57,7 +57,7 @@ final class Listing
         private readonly Builder $query,
         private readonly Request $request,
     ) {
-        $this->default = new Sort($query->getModel()->getKeyName(), 'desc');
+        $this->default = new Sort($query->getModel()->getKeyName(), Direction::desc);
         $this->resolveSort();
     }
 
@@ -292,7 +292,7 @@ final class Listing
             return null;
         }
 
-        return $this->current->direction === 'asc' ? 'ascending' : 'descending';
+        return $this->current->direction->aria();
     }
 
     /** Qualified, like a positional sort, so a defaulted column stays unambiguous on a join. */

@@ -9,24 +9,27 @@ use Illuminate\Contracts\Database\Eloquent\Builder;
 /** @internal `?sort=`: `total` is ascending, `-total` descending. */
 final readonly class Sort
 {
-    /** @param  'asc'|'desc'  $direction */
+    private const string DESCENDING = '-';
+
     public function __construct(
         public string $name,
-        public string $direction,
+        public Direction $direction,
     ) {}
 
     public static function parse(string $sort): self
     {
-        return str_starts_with($sort, '-') ? new self(substr($sort, 1), 'desc') : new self($sort, 'asc');
+        return str_starts_with($sort, self::DESCENDING)
+            ? new self(substr($sort, strlen(self::DESCENDING)), Direction::desc)
+            : new self($sort, Direction::asc);
     }
 
     public function toggled(string $name): self
     {
         if ($name !== $this->name) {
-            return new self($name, 'desc');
+            return new self($name, Direction::desc);
         }
 
-        return new self($name, $this->direction === 'asc' ? 'desc' : 'asc');
+        return new self($name, $this->direction->toggled());
     }
 
     /**
@@ -37,15 +40,15 @@ final readonly class Sort
     {
         $key = $query->getModel()->getQualifiedKeyName();
 
-        $query->reorder($column, $this->direction);
+        $query->reorder($column, $this->direction->value);
 
         if ($column !== $key) {
-            $query->orderBy($key, $this->direction);
+            $query->orderBy($key, $this->direction->value);
         }
     }
 
     public function __toString(): string
     {
-        return ($this->direction === 'desc' ? '-' : '') . $this->name;
+        return ($this->direction === Direction::desc ? self::DESCENDING : '') . $this->name;
     }
 }
