@@ -47,14 +47,6 @@ final class SearchTest extends TestCase
         $this->assertSame(['50!'], $this->search('name', '50!'));
     }
 
-    /** `[` is a wildcard on SQL Server only, so only the binding shows it is escaped. */
-    public function test_the_pattern_escapes_a_bracket_for_sql_server(): void
-    {
-        $query = Listing::for(Product::query(), Request::create('/?q=%5Bx%5D'))->search('q', 'name')->apply();
-
-        $this->assertSame(['%![x]%'], $query->getBindings());
-    }
-
     /** A default collation, ILIKE and SQLite's own LIKE all ignore case. */
     public function test_a_term_matches_in_any_letter_case(): void
     {

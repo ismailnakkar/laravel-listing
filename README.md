@@ -5,13 +5,16 @@ a stale bookmark or a hostile URL shows the default list, never a 4xx or 5xx.
 
 ## Install
 
+Needs PHP 8.4+, Laravel 13, and MySQL, MariaDB, PostgreSQL or SQLite.
+
 ```bash
 composer require ismailnakkar/laravel-listing
 ```
 
-Requires PHP 8.4 and Laravel 13. No service provider, config or views.
+There is no service provider, config or view to publish. To give Laravel's own `paginate()` the same safe `?page`, see
+[Paging](#paging).
 
-## Usage
+## Quick start
 
 ```php
 use App\Enums\OrderStatus;
@@ -41,10 +44,25 @@ public function index()
 matching "lamp" since October 1st, largest first.
 
 The listing reads the current request, or one passed second, and its page links follow the same request. Only the query
-string is read: a form or JSON body never sets a filter, a sort or a page. `sort`, `page` and `cursor` are taken, so do
-not use them as keys.
+string is read: a form or JSON body never sets a filter, a sort or a page. `sort`, `page` and `cursor` are the
+listing's own keys: a filter key that is one, or nests under one (`page.size`), throws.
 
-### Filters
+## API
+
+| Member | Does |
+| --- | --- |
+| `Listing::for($query, $request = null)` | a listing of an Eloquent query or relation |
+| `int()`, `text()`, `flag()`, `enum()`, `enums()`, `ints()`, `search()`, `date()` | add a filter: [Filters](#filters) |
+| `sorts(...$columns)`, `defaultSort($sort)` | the names `?sort=` may use, and the order otherwise: [Sorts](#sorts) |
+| `when()`, `unless()` | Laravel's `Conditionable`, to declare a filter or sort on a condition |
+| `paginate()`, `simplePaginate()`, `cursorPaginate()` | the page of rows: [Paging](#paging) |
+| `apply()` | the filtered, sorted query without paging |
+| `$listing->values` | each filter key's typed value, for refilling the form: [The view](#the-view) |
+| `$listing->sort` | the sort in force, such as `-created_at`, for the form's hidden input |
+| `sortUrl($name)`, `ariaSort($name)` | a sortable header's link and `aria-sort` |
+| `Listing::protectAllPages()` | Laravel's own paginators read `?page` as a listing does |
+
+## Filters
 
 | Method | Reads `?key=` as | Keeps rows where |
 | --- | --- | --- |
@@ -55,14 +73,27 @@ not use them as keys.
 | `enums($key, Enum::class, $column = null)` | a list of cases: `?key[]=a&key[]=b`, or `?key=a` | the column is any of them |
 | `ints($key, $column = null, $max = PHP_INT_MAX)` | a list of whole numbers, `0` to `$max` | the column is any of them |
 | `search($key, $columns = null, $max = 255)` | the trimmed string, up to `$max` characters | any column contains it |
-| `date($key, $column = null, $operator = '=')` | a real day, `2026-10-01`, from `1753-01-01` | the column is on (`=`), on or after (`>=`) or on or before (`<=`) it |
+| `date($key, $column = null, $operator = '=')` | a real day, `2026-10-01` | the column is on (`=`), on or after (`>=`) or on or before (`<=`) it |
 
 - A value that does not read, an empty form field included, is `null` and filters nothing. `enums()` and `ints()` drop
   what does not read and hold a list, empty when nothing reads; more than 1000 values read as empty.
 - The column defaults to the key on the listed model's table (`orders.status`), so it stays unambiguous on a join. A
   column you pass is used as written: name a joined or pivot column in full (`customers.email`, `team_user.role`).
+- A dotted key reads nested input: `text('filter.name', 'name')` reads `?filter[name]=` into `values['filter.name']`.
+  Give it a column: the default is the key as written, which reads `filter` as a table.
 - A `flag()` checkbox needs `value="1"`; without it the browser sends `on`, which reads as `null`.
-- Declaring a key twice throws.
+- Declaring a key twice throws, and so does `enum()` or `enums()` on an enum that is not backed.
+
+### Custom filters
+
+Every filter but `search()` takes a closure in place of the column. It runs only when there is a value, and gets the
+query and that value (a non-empty list for `enums()` and `ints()`, the `Y-m-d` string for `date()`).
+
+```php
+use Illuminate\Database\Eloquent\Builder;
+
+->int('team', fn (Builder $query, int $team) => $query->whereHas('teams', fn (Builder $q) => $q->whereKey($team)))
+```
 
 ### Search
 
@@ -84,37 +115,22 @@ an index on the column serves the range. Days are on the column's own clock:
 - `date`, `dateTime`, and `timestamp` outside MySQL and MariaDB: `app.timezone`, the clock Eloquent writes in.
 - MySQL's and MariaDB's `timestamp`, PostgreSQL's `timestamptz`: the connection's time zone, so keep
   `database.connections.*.timezone` equal to `app.timezone` (a named zone on MySQL needs its time zone tables loaded).
-- SQL Server's `timestampTz` (`datetimeoffset`): UTC.
 
-### Sorts
+## Sorts
 
 `?sort=total` is ascending, `?sort=-total` descending. In `sorts()`, a positional name is a column of the listed model's
 table, and a named argument maps a name to a select alias or another column (`customer: 'customer_name'`). Name a
-joined column by its select alias: `cursorPaginate()` reads each row's sort value by that name. Each call adds names,
-so a sort can depend on the user: `->when($user->isAdmin(), fn (Listing $l) => $l->sorts('margin'))`.
+joined column by its select alias: `cursorPaginate()` reads each row's sort value by that name.
+
+Each `sorts()` call adds names, so a sort can depend on the user (a name given again takes its new column):
+
+```php
+->when($user->isAdmin(), fn (Listing $listing) => $listing->sorts('margin'))
+```
 
 Any other `?sort=` gives `defaultSort()`, else the model's key, descending. The sort replaces any order the query had,
 a relation's own `latest()` included, and ties order by the key in the same direction. Index each sortable column; on
 PostgreSQL, the index must cover the column and the key.
-
-### Relations
-
-`Listing::for()` takes a relation too, and pages it as itself, so each row keeps its `pivot`:
-
-```php
-Listing::for($team->members())->text('role', 'team_user.role')->sorts('name');
-```
-
-### Custom filters
-
-Every filter but `search()` takes a closure in place of the column. It runs only when there is a value, and gets the
-query and that value (a non-empty list for `enums()` and `ints()`).
-
-```php
-use Illuminate\Database\Eloquent\Builder;
-
-->int('team', fn (Builder $query, int $team) => $query->whereHas('teams', fn (Builder $q) => $q->whereKey($team)))
-```
 
 ## The view
 
@@ -164,6 +180,7 @@ A sortable header:
 
 `sortUrl()` flips the sorted column and starts any other descending; it keeps the query string and drops `page` and
 `cursor`. It throws for a name `sorts()` lacks, so a header for a user-dependent sort needs the same condition.
+`ariaSort()` is `ascending` or `descending` on the sorted column, `null` on any other.
 
 ## Paging
 
@@ -173,18 +190,27 @@ A sortable header:
 | `simplePaginate($perPage = null)` | previous and next, with no COUNT query |
 | `cursorPaginate($perPage = null)` | previous and next by cursor, with no COUNT and no OFFSET |
 
-Each takes a page size, else the model's `$perPage`, and its links keep the query string.
+Each takes a page size, else (`null` or `0`) the model's `$perPage`, and its links keep the query string.
 
 - A `?page` that is not a positive whole number, or so large its offset would overflow, shows the first page.
-- Call `Listing::protectAllPages()` once, in a service provider's `boot()`, and Laravel's own `paginate()` and
-  `simplePaginate()` read `?page` the same way, from the query string only, for page sizes up to 10,000.
 - A `?cursor` from another sort order, holding a null, or holding a value the column rejects shows the first page; any
   other database error throws.
 - As in Laravel, cursor paging skips or repeats rows at a NULL sort value: give a cursor screen NOT NULL sort columns;
   `timestamps()` columns are nullable.
 
+Call `Listing::protectAllPages()` once, in a service provider's `boot()`, and Laravel's own `paginate()` and
+`simplePaginate()` read `?page` the same way, from the query string only, for page sizes up to 10,000.
+
 `apply()` is the filtered, sorted query without paging, for an export with `->lazy()`, a count or a second query; a
 relation stays a relation. Page with the methods above, not `apply()`: they carry the page cap and the cursor guard.
+
+## Relations
+
+`Listing::for()` takes a relation too, and pages it as itself, so each row keeps its `pivot`:
+
+```php
+Listing::for($team->members())->text('role', 'team_user.role')->sorts('name');
+```
 
 ## Form requests
 
@@ -201,32 +227,28 @@ once, keep it in a declared property (`private ?Listing $listing = null;`, then
   `Str::isUuid()` first.
 - **GROUP BY or DISTINCT** listings fail on PostgreSQL and MySQL: the key tiebreak orders by a column that is neither
   grouped nor selected.
-- **SQL Server** needs `pdo_sqlsrv`: `pdo_dblib` turns bound text into code page 1252 (`％` becomes `%`) and returns
-  NULL instead of raising conversion errors. `date()` does not support `smalldatetime`; use a closure. `search()`
-  misses a `2026-10-01` term in a `datetime` column (what `timestamps()` creates there), which reads as
-  `Oct  1 2026 12:00AM`; filter days with `date()`.
 - **MySQL and MariaDB:** a `utf8mb3` column fails on an emoji search; use `utf8mb4`.
 
 ## Testing
 
-Apps need no fake or setup; outside an HTTP call, pass the request: `Listing::for($query, Request::create('/?q=lamp'))`.
-The package's suite:
+Apps need no fake or setup. Outside an HTTP call, pass the request: `Listing::for($query, Request::create('/?q=lamp'))`.
+
+The package's suite runs on in-memory SQLite; `DB_CONNECTION` and `DB_*` run it on a server database instead (CI runs
+MySQL 8.4, MariaDB 11.8 and PostgreSQL 18). It drops every table first, so give it a throwaway database.
 
 ```bash
-composer check    # pint --test, phpstan, then phpunit on in-memory SQLite
-docker run -d --name listing-pg -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=listing -p 127.0.0.1:5432:5432 postgres:18
-DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=listing DB_USERNAME=postgres DB_PASSWORD=secret vendor/bin/phpunit
+composer check    # pint --test, phpstan, then phpunit
+DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_DATABASE=listing DB_USERNAME=postgres DB_PASSWORD=secret vendor/bin/phpunit
 ```
 
-Before a release, run SQL Server 2022 (`DB_CONNECTION=sqlsrv`, `pdo_sqlsrv`) by hand, and a mutation pass on SQLite and
-PostgreSQL: revert each guard, and some test must fail.
+Before a release, run a mutation pass on SQLite and PostgreSQL: revert each guard, and some test must fail.
 
 ## Upgrading
 
-### From 0.5
+### From 0.6
 
-- `?key=0` on `int()` and `ints()` now keeps the rows whose column is `0` instead of filtering nothing. An "any"
-  option or link that sends `0` must send an empty value.
+- SQL Server is no longer supported: the package runs on MySQL, MariaDB, PostgreSQL and SQLite.
+- A filter key that is `sort`, `page` or `cursor`, or nests under one (`page.size`), throws.
 
 ## Licence
 

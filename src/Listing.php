@@ -16,21 +16,37 @@ use Illuminate\Http\Request;
 use Illuminate\Pagination\CursorPaginator;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Str;
 use Illuminate\Support\Traits\Conditionable;
 use InvalidArgumentException;
 use LogicException;
 use UnexpectedValueException;
 
 /**
- * A list page's filters and sorts, read leniently from the query string only, so no URL bounces the page. A filter's
- * column defaults to the key on the model's table; a closure in its place runs only on a value, and gets the query
- * and the value.
+ * A list page's filters, sort and page, read leniently from the query string only, so no URL bounces the page. A
+ * filter's column defaults to the key on the model's table; a closure in its place gets the query and the value, and
+ * runs only when there is one.
  *
  * @template TModel of Model
  */
 final class Listing
 {
     use Conditionable;
+
+    private const string SORT = 'sort';
+
+    private const string PAGE = 'page';
+
+    private const string CURSOR = 'cursor';
+
+    /** The query keys the listing reads itself: no filter key may be one, or nest under one. */
+    private const array OWN_KEYS = [self::SORT, self::PAGE, self::CURSOR];
+
+    /** protectAllPages() keeps the offset in range up to this page size. */
+    private const int MAX_PROTECTED_PAGE_SIZE = 10_000;
+
+    /** SQLSTATE class 22, data exception: a cursor value the column cannot take. */
+    private const string DATA_EXCEPTION = '22';
 
     /**
      * Each key's narrowed value, for refilling the form: null when none reads; enums() and ints() hold a list.
@@ -81,8 +97,10 @@ final class Listing
      */
     public static function protectAllPages(): void
     {
+        $maxPage = intdiv(PHP_INT_MAX, self::MAX_PROTECTED_PAGE_SIZE);
+
         Paginator::currentPageResolver(
-            static fn (string $pageName = 'page'): int => Filter::positiveInt(request()->query($pageName), intdiv(PHP_INT_MAX, 10_000)) ?? 1,
+            static fn (string $pageName = self::PAGE): int => Input::positiveInt(request()->query($pageName), $maxPage) ?? 1,
         );
     }
 
@@ -155,14 +173,14 @@ final class Listing
 
     /**
      * Rows where any column contains the trimmed term literally; an expression is searched as written. Letter case is
-     * as whereLike(): the collation on MySQL, MariaDB and SQL Server, ILIKE on PostgreSQL, ASCII case ignored on
+     * as whereLike(): the collation on MySQL and MariaDB, ILIKE on PostgreSQL, ASCII case ignored on
      * SQLite.
      *
      * @param  string|Expression|non-empty-list<string|Expression>|null  $columns
      */
     public function search(string $key, string|Expression|array|null $columns = null, int $max = 255): static
     {
-        return $this->add(Filter::search($key, $columns ?? $this->query->getModel()->qualifyColumn($key), $max));
+        return $this->add(Filter::search($key, $columns ?? $this->qualify($key), $max));
     }
 
     /**
@@ -182,11 +200,9 @@ final class Listing
      */
     public function sorts(string ...$columns): static
     {
-        $model = $this->query->getModel();
-
         foreach ($columns as $name => $column) {
             if (is_int($name)) {
-                [$name, $column] = [$column, $model->qualifyColumn($column)];
+                [$name, $column] = [$column, $this->qualify($column)];
             }
 
             $this->sorts[$name] = $column;
@@ -220,7 +236,7 @@ final class Listing
             $filter->apply($eloquent, $this->values[$key]);
         }
 
-        $this->current->apply($eloquent, $this->sorts[$this->current->name] ?? $eloquent->getModel()->qualifyColumn($this->current->name));
+        $this->current->apply($eloquent, $this->sorts[$this->current->name] ?? $this->qualify($this->current->name));
 
         return $query;
     }
@@ -232,10 +248,9 @@ final class Listing
      */
     public function paginate(?int $perPage = null): LengthAwarePaginator
     {
-        $query = $this->apply();
-        $perPage = $perPage ?: $query->getModel()->getPerPage();
+        $perPage = $this->perPage($perPage);
 
-        return $this->links($query->paginate($perPage, ['*'], 'page', $this->page($perPage)));
+        return $this->links($this->apply()->paginate($perPage, ['*'], self::PAGE, $this->page($perPage)));
     }
 
     /**
@@ -245,10 +260,9 @@ final class Listing
      */
     public function simplePaginate(?int $perPage = null): Paginator
     {
-        $query = $this->apply();
-        $perPage = $perPage ?: $query->getModel()->getPerPage();
+        $perPage = $this->perPage($perPage);
 
-        return $this->links($query->simplePaginate($perPage, ['*'], 'page', $this->page($perPage)));
+        return $this->links($this->apply()->simplePaginate($perPage, ['*'], self::PAGE, $this->page($perPage)));
     }
 
     /**
@@ -258,18 +272,18 @@ final class Listing
      */
     public function cursorPaginate(?int $perPage = null): CursorPaginator
     {
-        $perPage = $perPage ?: $this->query->getModel()->getPerPage();
-        $cursor = $this->request->query('cursor');
+        $perPage = $this->perPage($perPage);
+        $cursor = $this->request->query(self::CURSOR);
 
         try {
-            return $this->links($this->apply()->cursorPaginate($perPage, ['*'], 'cursor', is_string($cursor) ? $cursor : ''));
+            return $this->cursorPage($perPage, is_string($cursor) ? $cursor : null);
         } catch (UnexpectedValueException|InvalidArgumentException) {
             // A cursor from another sort order, or one holding a null.
         } catch (QueryException $e) {
-            throw_unless(str_starts_with((string)$e->getCode(), '22'), $e);
+            throw_unless(str_starts_with((string)$e->getCode(), self::DATA_EXCEPTION), $e);
         }
 
-        return $this->links($this->apply()->cursorPaginate($perPage, ['*'], 'cursor', ''));
+        return $this->cursorPage($perPage, null);
     }
 
     /**
@@ -282,23 +296,61 @@ final class Listing
             throw new InvalidArgumentException("The listing has no sort named [{$name}].");
         }
 
-        return $this->request->fullUrlWithQuery(['sort' => (string)$this->current->toggled($name), 'page' => null, 'cursor' => null]);
+        return $this->request->fullUrlWithQuery([
+            self::SORT   => (string)$this->current->toggled($name),
+            self::PAGE   => null,
+            self::CURSOR => null,
+        ]);
     }
 
     /** A header's `aria-sort`: null on a column the list is not sorted by. */
     public function ariaSort(string $name): ?string
     {
-        if ($name !== $this->current->name) {
-            return null;
-        }
-
-        return $this->current->direction->aria();
+        return $name === $this->current->name ? $this->current->direction->aria() : null;
     }
 
     /** Qualified, like a positional sort, so a defaulted column stays unambiguous on a join. */
     private function column(string $key, string|Closure|null $column): string|Closure
     {
-        return $column ?? $this->query->getModel()->qualifyColumn($key);
+        return $column ?? $this->qualify($key);
+    }
+
+    /** On the listed model's table. */
+    private function qualify(string $column): string
+    {
+        return $this->query->getModel()->qualifyColumn($column);
+    }
+
+    private function add(Filter $filter): static
+    {
+        $root = Str::before($filter->key, '.');
+
+        if (in_array($root, self::OWN_KEYS, true)) {
+            throw new LogicException("[{$root}] is the listing's own query key.");
+        }
+
+        if (array_key_exists($filter->key, $this->filters)) {
+            throw new LogicException("The listing already filters [{$filter->key}].");
+        }
+
+        $this->filters[$filter->key] = $filter;
+        $this->values[$filter->key] = $filter->read(data_get($this->request->query(), $filter->key));
+
+        return $this;
+    }
+
+    private function resolveSort(): void
+    {
+        $input = Input::string($this->request->query(self::SORT));
+        $sort = $input === null ? null : Sort::parse($input);
+
+        $this->current = $sort !== null && array_key_exists($sort->name, $this->sorts) ? $sort : $this->default;
+        $this->sort = (string)$this->current;
+    }
+
+    private function perPage(?int $perPage): int
+    {
+        return $perPage ?: $this->query->getModel()->getPerPage();
     }
 
     /**
@@ -317,27 +369,17 @@ final class Listing
     /** Capped so a huge `?page` cannot overflow the offset. */
     private function page(int $perPage): int
     {
-        return Filter::positiveInt($this->request->query('page'), intdiv(PHP_INT_MAX, $perPage)) ?? 1;
+        return Input::positiveInt($this->request->query(self::PAGE), intdiv(PHP_INT_MAX, $perPage)) ?? 1;
     }
 
-    private function add(Filter $filter): static
+    /**
+     * Null is the first page. Laravel takes a string, even empty, as the cursor, and resolves a null one from the app
+     * request's input, body included.
+     *
+     * @return CursorPaginator<int, TModel>
+     */
+    private function cursorPage(int $perPage, ?string $cursor): CursorPaginator
     {
-        if (array_key_exists($filter->key, $this->filters)) {
-            throw new LogicException("The listing already filters [{$filter->key}].");
-        }
-
-        $this->filters[$filter->key] = $filter;
-        $this->values[$filter->key] = $filter->read(data_get($this->request->query(), $filter->key));
-
-        return $this;
-    }
-
-    private function resolveSort(): void
-    {
-        $input = Filter::cleanString($this->request->query('sort'));
-        $sort = $input === null ? null : Sort::parse($input);
-
-        $this->current = $sort !== null && array_key_exists($sort->name, $this->sorts) ? $sort : $this->default;
-        $this->sort = (string)$this->current;
+        return $this->links($this->apply()->cursorPaginate($perPage, ['*'], self::CURSOR, $cursor ?? ''));
     }
 }

@@ -12,7 +12,10 @@ enum Direction: string
 
     public function toggled(): self
     {
-        return $this === self::asc ? self::desc : self::asc;
+        return match ($this) {
+            self::asc  => self::desc,
+            self::desc => self::asc,
+        };
     }
 
     /** The header's `aria-sort`. */

@@ -23,18 +23,15 @@ final readonly class Sort
             : new self($sort, Direction::asc);
     }
 
+    /** Flipped on its own column; any other starts descending. */
     public function toggled(string $name): self
     {
-        if ($name !== $this->name) {
-            return new self($name, Direction::desc);
-        }
-
-        return new self($name, $this->direction->toggled());
+        return new self($name, $name === $this->name ? $this->direction->toggled() : Direction::desc);
     }
 
     /**
      * Replaces any order, so a relation's own `latest()` cannot outrank the header, then breaks ties on the key so rows
-     * keep their place across pages; the key goes in once, as SQL Server rejects a repeated ORDER BY column.
+     * keep their place across pages; the key goes in once.
      */
     public function apply(Builder $query, string $column): void
     {

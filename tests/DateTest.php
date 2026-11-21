@@ -62,16 +62,16 @@ final class DateTest extends TestCase
         $this->seedProducts();
 
         foreach (['day', 'day_cast', 'at'] as $column) {
-            $this->assertSame(['P1', 'P2', 'P3', 'P4'], $this->names($column, 'from=1753-01-01&to=9999-12-31'), $column);
+            $this->assertSame(['P1', 'P2', 'P3', 'P4'], $this->names($column, 'from=0001-01-01&to=9999-12-31'), $column);
             $this->assertSame(['P1', 'P2', 'P3', 'P4'], $this->names($column, 'to=9999-12-31'), $column);
             $this->assertSame([], $this->names($column, 'on=9999-12-31'), $column);
-            $this->assertSame(['P1', 'P2', 'P3', 'P4', 'Undated'], $this->names($column, 'to=1752-12-31'), $column);
+            $this->assertSame([], $this->names($column, 'to=0001-01-01'), $column);
         }
     }
 
-    public function test_a_day_is_a_real_y_m_d_from_1753(): void
+    public function test_a_day_is_a_real_y_m_d(): void
     {
-        foreach (['2026-10-01', '2028-02-29', '1753-01-01', '9999-12-31'] as $day) {
+        foreach (['2026-10-01', '2028-02-29', '0001-01-01', '9999-12-31'] as $day) {
             $this->assertSame($day, $this->day($day));
         }
 
@@ -79,19 +79,11 @@ final class DateTest extends TestCase
 
         foreach (['', '2026-02-29', '2026-02-30', '2026-13-01', '2026-00-10', '2026-10-32', '2026-1-1', '2026-01-01T10:00',
             '2026-10-01 00:00:00', '20261001', '01/10/2026', '+2026-10-01', "\u{FF12}\u{FF10}\u{FF12}\u{FF16}-10-01",
-            '0000-01-01', '1752-12-31', '10000-01-01', "2026-10\x0001", "\xFF"] as $input) {
+            '0000-01-01', '10000-01-01', "2026-10\x0001", "\xFF"] as $input) {
             $this->assertNull($this->day($input), var_export($input, true));
         }
 
         $this->assertNull(Listing::for(Product::query(), Request::create('/?on[]=2026-10-01'))->date('on')->values['on']);
-    }
-
-    /** SQL Server reads `2026-10-01` by the login's language for a legacy datetime; `20261001` reads the same in all. */
-    public function test_sql_server_gets_each_day_as_ymd(): void
-    {
-        $query = Listing::for(Product::on('sqlsrv'), Request::create('/?on=2026-10-01'))->date('on', 'at')->apply();
-
-        $this->assertSame(['20261001', '20261002'], $query->getBindings());
     }
 
     /** Samoa skipped 2011-12-30. */

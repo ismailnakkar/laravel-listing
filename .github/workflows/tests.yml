@@ -4,16 +4,19 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # The whole grid, on pull requests and when run by hand before a tag. A push to main runs only `newest`.
   sqlite:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
 
     strategy:
@@ -22,9 +25,9 @@ jobs:
         php: ['8.4', '8.5']
         deps: [prefer-lowest, prefer-stable]
 
-    name: SQLite · PHP ${{ matrix.php }} · ${{ matrix.deps }}
+    name: &name SQLite · PHP ${{ matrix.php }} · ${{ matrix.deps }}
 
-    steps:
+    steps: &steps
       - uses: actions/checkout@v7
 
       - uses: shivammathur/setup-php@v2
@@ -32,15 +35,26 @@ jobs:
           php-version: ${{ matrix.php }}
           coverage: none
 
-      # The lowest leg installs the declared Laravel 13.0 floor, which has security advisories; malware and
-      # abandoned-package blocking stay on.
+      # Laravel 13.0, the prefer-lowest floor, has advisories; only advisory blocking is turned off.
       - run: composer update --${{ matrix.deps }} --prefer-dist --no-interaction --no-progress
         env:
           COMPOSER_POLICY_ADVISORIES_BLOCK: ${{ matrix.deps == 'prefer-lowest' && '0' || '1' }}
 
-      - run: composer check
+      - run: composer ${{ matrix.php == '8.5' && matrix.deps == 'prefer-stable' && 'check' || 'test' }}
+
+  # A push to main: the grid's newest row, which also runs the rest of the check.
+  newest:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { php: '8.5', deps: prefer-stable }
+    name: *name
+    steps: *steps
 
   database:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
 
     strategy:

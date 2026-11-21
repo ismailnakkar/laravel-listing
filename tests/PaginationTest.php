@@ -162,7 +162,7 @@ final class PaginationTest extends TestCase
         }
     }
 
-    /** PostgreSQL and SQL Server reject a cursor value the column cannot hold; SQLite and MySQL compare it and page on. */
+    /** PostgreSQL rejects a cursor value the column cannot hold; SQLite and MySQL compare it and page on. */
     public function test_cursor_paginate_shows_the_first_page_for_a_cursor_value_the_column_cannot_hold(): void
     {
         $this->seedProducts(7);
@@ -170,7 +170,7 @@ final class PaginationTest extends TestCase
 
         $page = $this->listing("sort=price&cursor={$forged}")->sorts('price', 'name')->cursorPaginate(3);
 
-        if (in_array(DB::getDriverName(), ['pgsql', 'sqlsrv'], true)) {
+        if (DB::getDriverName() === 'pgsql') {
             $this->assertSame(['P3', 'P6', 'P1'], $page->getCollection()->pluck('name')->all());
         }
 

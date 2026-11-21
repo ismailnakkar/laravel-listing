@@ -11,14 +11,18 @@ use DateTimeZone;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Query\Grammars\PostgresGrammar;
-use Illuminate\Database\Query\Grammars\SqlServerGrammar;
-use Illuminate\Support\Str;
 use InvalidArgumentException;
 use ReflectionEnum;
 
 /** @internal One filter: how its input narrows to a type, and the condition it adds. */
 final readonly class Filter
 {
+    /** A backstop for a raised max_input_vars: each value is a binding. */
+    private const int MAX_VALUES = 1000;
+
+    /** It has no next day: a 5-digit year compares wrong as text. */
+    private const string LAST_DAY = '9999-12-31';
+
     private function __construct(
         public string $key,
         private Closure $read,
@@ -27,18 +31,18 @@ final readonly class Filter
 
     public static function int(string $key, string|Closure $column, int $max): self
     {
-        return new self($key, fn (mixed $input): ?int => self::naturalInt($input, $max), self::where($column));
+        return new self($key, fn (mixed $input): ?int => Input::naturalInt($input, $max), self::where($column));
     }
 
     public static function text(string $key, string|Closure $column, int $max): self
     {
-        return new self($key, fn (mixed $input): ?string => self::cleanString($input, $max), self::where($column));
+        return new self($key, fn (mixed $input): ?string => Input::string($input, $max), self::where($column));
     }
 
     /** '0' is false, not absent: "No" is an answer. */
     public static function flag(string $key, string|Closure $column): self
     {
-        return new self($key, fn (mixed $input): ?bool => match (self::cleanString($input)) {
+        return new self($key, fn (mixed $input): ?bool => match (Input::string($input)) {
             '1'     => true,
             '0'     => false,
             default => null,
@@ -59,19 +63,18 @@ final readonly class Filter
 
     public static function ints(string $key, string|Closure $column, int $max): self
     {
-        return self::many($key, fn (mixed $input): ?int => self::naturalInt($input, $max), $column);
+        return self::many($key, fn (mixed $input): ?int => Input::naturalInt($input, $max), $column);
     }
 
     /**
-     * `!` is the escape as it is plain text in every database; `[` is a wildcard on SQL Server. PostgreSQL casts each
-     * column to text, so a number, date or uuid can be searched.
+     * PostgreSQL casts each column to text, so a number, date or uuid can be searched.
      *
      * @param  string|Expression|non-empty-list<string|Expression>  $columns
      */
     public static function search(string $key, string|Expression|array $columns, int $max): self
     {
-        return new self($key, fn (mixed $input): ?string => self::cleanString($input, $max), function (Builder $query, string $term) use ($columns): void {
-            $pattern = '%' . strtr($term, ['!' => '!!', '%' => '!%', '_' => '!_', '[' => '![']) . '%';
+        return new self($key, fn (mixed $input): ?string => Input::string($input, $max), function (Builder $query, string $term) use ($columns): void {
+            $pattern = self::likePattern($term);
             $grammar = $query->getQuery()->getGrammar();
             $like = $grammar instanceof PostgresGrammar ? "(%s)::text ilike ? escape '!'" : "%s like ? escape '!'";
 
@@ -83,12 +86,7 @@ final readonly class Filter
         });
     }
 
-    /**
-     * `Y-m-d` from 1753-01-01, where SQL Server's datetime starts. Half-open string bounds, not whereDate(), so an
-     * index serves it.
-     *
-     * @param  '='|'>='|'<='  $operator
-     */
+    /** @param  '='|'>='|'<='  $operator */
     public static function date(string $key, string|Closure $column, string $operator): self
     {
         [$lower, $upper] = match ($operator) {
@@ -97,54 +95,45 @@ final readonly class Filter
             '<=' => [false, true],
         };
 
-        return new self($key, function (mixed $input): ?string {
-            $day = self::cleanString($input, 10);
+        $condition = $column instanceof Closure ? $column : self::wholeDays($column, $lower, $upper);
 
-            return $day !== null && preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $day, $m) === 1
-                && checkdate((int)$m[2], (int)$m[3], (int)$m[1]) && $day >= '1753-01-01' ? $day : null;
-        }, $column instanceof Closure ? $column : function (Builder $query, string $day) use ($column, $lower, $upper): void {
-            $format = $query->getQuery()->getGrammar() instanceof SqlServerGrammar ? 'Ymd' : 'Y-m-d';
-            $start = new DateTimeImmutable($day, new DateTimeZone('UTC'));
-
-            if ($lower) {
-                $query->where($column, '>=', $start->format($format));
-            }
-
-            if ($upper && $day !== '9999-12-31') {
-                $query->where($column, '<', $start->modify('+1 day')->format($format));
-            } elseif ($upper && ! $lower) {
-                $query->whereNotNull($column);
-            }
-        });
+        return new self($key, self::day(...), $condition);
     }
 
-    /** Invalid UTF-8 and NUL read as null: databases mishandle them. */
-    public static function cleanString(mixed $input, int $max = 255): ?string
+    public function read(mixed $input): mixed
     {
-        if (! is_string($input) || ! mb_check_encoding($input, 'UTF-8') || str_contains($input, "\0")) {
-            return null;
+        return ($this->read)($input);
+    }
+
+    public function apply(Builder $query, mixed $value): void
+    {
+        if ($value !== null && $value !== []) {
+            ($this->apply)($query, $value);
         }
-
-        $input = Str::trim($input);
-
-        return $input === '' || mb_strlen($input) > $max ? null : $input;
     }
 
-    /**
-     * Digits only, as (int) 'nope' is 0; range-checked, as (int) saturates; leading zeros stripped, as
-     * FILTER_VALIDATE_INT rejects them.
-     */
-    private static function naturalInt(mixed $input, int $max): ?int
+    private static function where(string|Closure $column): Closure
     {
-        $digits = self::cleanString($input) ?? '';
-        $range = ['options' => ['max_range' => $max], 'flags' => FILTER_NULL_ON_FAILURE];
-
-        return ctype_digit($digits) ? filter_var(ltrim($digits, '0') ?: '0', FILTER_VALIDATE_INT, $range) : null;
+        return $column instanceof Closure ? $column : fn (Builder $query, mixed $value) => $query->where($column, $value);
     }
 
-    public static function positiveInt(mixed $input, int $max = PHP_INT_MAX): ?int
+    /** Over MAX_VALUES values read as empty. */
+    private static function many(string $key, Closure $read, string|Closure $column): self
     {
-        return self::naturalInt($input, $max) ?: null;
+        return new self($key, function (mixed $input) use ($read): array {
+            $inputs = is_array($input) ? $input : [$input];
+            $values = [];
+
+            foreach (count($inputs) > self::MAX_VALUES ? [] : $inputs as $item) {
+                $value = $read($item);
+
+                if ($value !== null) {
+                    $values[$value instanceof BackedEnum ? $value->value : $value] = $value;
+                }
+            }
+
+            return array_values($values);
+        }, $column instanceof Closure ? $column : fn (Builder $query, array $values) => $query->whereIn($column, $values));
     }
 
     /**
@@ -164,7 +153,7 @@ final readonly class Filter
         $int = $reflection->getBackingType()->getName() === 'int';
 
         return function (mixed $input) use ($enum, $int): ?BackedEnum {
-            $value = self::cleanString($input);
+            $value = Input::string($input);
 
             if ($value === null || ($int && ! ctype_digit($value))) {
                 return null;
@@ -174,39 +163,37 @@ final readonly class Filter
         };
     }
 
-    /** Over 1000 values read as empty: a backstop for a raised max_input_vars, as SQL Server takes 2100 bindings. */
-    private static function many(string $key, Closure $one, string|Closure $column): self
+    /** `!` is the escape, as it is plain text in every database. */
+    private static function likePattern(string $term): string
     {
-        return new self($key, function (mixed $input) use ($one): array {
-            $inputs = is_array($input) ? $input : [$input];
-            $values = [];
+        return '%' . strtr($term, ['!' => '!!', '%' => '!%', '_' => '!_']) . '%';
+    }
 
-            foreach (count($inputs) > 1000 ? [] : $inputs as $item) {
-                $value = $one($item);
+    /** A real `Y-m-d`. */
+    private static function day(mixed $input): ?string
+    {
+        $day = Input::string($input, 10);
 
-                if ($value !== null) {
-                    $values[$value instanceof BackedEnum ? $value->value : $value] = $value;
-                }
+        return $day !== null && preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $day, $m) === 1
+            && checkdate((int)$m[2], (int)$m[3], (int)$m[1]) ? $day : null;
+    }
+
+    /** Half-open string bounds, not whereDate(), so an index serves it. */
+    private static function wholeDays(string $column, bool $lower, bool $upper): Closure
+    {
+        return function (Builder $query, string $day) use ($column, $lower, $upper): void {
+            $start = new DateTimeImmutable($day, new DateTimeZone('UTC'));
+
+            if ($lower) {
+                $query->where($column, '>=', $start->format('Y-m-d'));
             }
 
-            return array_values($values);
-        }, $column instanceof Closure ? $column : fn (Builder $query, array $values) => $query->whereIn($column, $values));
-    }
-
-    public function read(mixed $input): mixed
-    {
-        return ($this->read)($input);
-    }
-
-    public function apply(Builder $query, mixed $value): void
-    {
-        if ($value !== null && $value !== []) {
-            ($this->apply)($query, $value);
-        }
-    }
-
-    private static function where(string|Closure $column): Closure
-    {
-        return $column instanceof Closure ? $column : fn (Builder $query, mixed $value) => $query->where($column, $value);
+            // Up to the last day is any date.
+            if ($upper && $day !== self::LAST_DAY) {
+                $query->where($column, '<', $start->modify('+1 day')->format('Y-m-d'));
+            } elseif ($upper && ! $lower) {
+                $query->whereNotNull($column);
+            }
+        };
     }
 }

@@ -135,9 +135,9 @@ final class SortingTest extends TestCase
 
     public function test_a_sort_by_the_key_orders_by_it_once(): void
     {
-        $sql = Listing::for(Product::on('sqlsrv'), Request::create('/'))->apply()->toSql();
+        $orders = Listing::for(Product::query(), Request::create('/'))->apply()->getQuery()->orders;
 
-        $this->assertStringEndsWith('order by [products].[id] desc', $sql);
+        $this->assertSame([['column' => 'products.id', 'direction' => 'desc']], $orders);
     }
 
     public function test_apply_works_on_a_clone(): void

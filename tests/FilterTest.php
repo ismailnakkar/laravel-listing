@@ -239,6 +239,28 @@ final class FilterTest extends TestCase
         $this->listing('')->text('name')->flag('name');
     }
 
+    public function test_a_key_that_is_or_nests_under_the_listings_own_throws(): void
+    {
+        $message = function (string $key): ?string {
+            try {
+                $this->listing('')->text($key, 'name');
+            } catch (LogicException $e) {
+                return $e->getMessage();
+            }
+
+            return null;
+        };
+
+        $this->assertSame("[sort] is the listing's own query key.", $message('sort'));
+        $this->assertSame("[page] is the listing's own query key.", $message('page'));
+        $this->assertSame("[cursor] is the listing's own query key.", $message('cursor'));
+        $this->assertSame("[page] is the listing's own query key.", $message('page.size'));
+
+        foreach (['sorted', 'pages', 'filter.sort', 'filter.page'] as $key) {
+            $this->assertNull($message($key), $key);
+        }
+    }
+
     public function test_an_enum_that_is_not_backed_throws_where_it_is_declared(): void
     {
         $this->expectException(InvalidArgumentException::class);
