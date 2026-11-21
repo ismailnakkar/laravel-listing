@@ -245,7 +245,7 @@ Before a release, run a mutation pass on SQLite and PostgreSQL: revert each guar
 
 ## Upgrading
 
-### From 0.6
+### From 0.6.3
 
 - SQL Server is no longer supported: the package runs on MySQL, MariaDB, PostgreSQL and SQLite.
 - A filter key that is `sort`, `page` or `cursor`, or nests under one (`page.size`), throws.
