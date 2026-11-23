@@ -18,6 +18,7 @@ jobs:
   sqlite:
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     strategy:
       fail-fast: false
@@ -46,6 +47,7 @@ jobs:
   newest:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
         include:
@@ -56,6 +58,7 @@ jobs:
   database:
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     strategy:
       fail-fast: false
