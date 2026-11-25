@@ -97,8 +97,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 ### Search
 
-`%`, `_`, `!` and `[` in a term match themselves. Letter case follows the column's collation on MySQL, MariaDB and SQL
-Server (a `_bin` or `_cs` column matches case exactly); PostgreSQL uses `ILIKE`, and SQLite ignores ASCII case.
+`%`, `_` and `!` in a term match themselves. Letter case follows the column's collation on MySQL and MariaDB (a `_bin`
+or `_cs` column matches case exactly); PostgreSQL uses `ILIKE`, and SQLite ignores ASCII case.
 PostgreSQL casts each column to text, so a number, date or uuid column can be searched.
 
 An expression, alone or in the list, is searched as written. It is raw SQL: never build one from input.
