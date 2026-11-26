@@ -32,6 +32,7 @@ abstract class TestCase extends Testbench
             $table->string('name');
             $table->string('reference')->nullable();
             $table->string('kind')->nullable();
+            $table->string('shelf')->nullable();
             $table->unsignedTinyInteger('status')->nullable();
             $table->boolean('paid')->default(false);
             $table->integer('price')->default(0);

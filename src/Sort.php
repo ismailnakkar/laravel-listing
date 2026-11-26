@@ -33,13 +33,19 @@ final readonly class Sort
      * Replaces any order, so a relation's own `latest()` cannot outrank the header, then breaks ties on the key so rows
      * keep their place across pages; the key goes in once.
      */
-    public function apply(Builder $query, string $column): void
+    public function apply(Builder $query, string|CaseOrder $by): void
     {
         $key = $query->getModel()->getQualifiedKeyName();
 
-        $query->reorder($column, $this->direction->value);
+        $query->reorder();
 
-        if ($column !== $key) {
+        if ($by instanceof CaseOrder) {
+            $by->orderBy($query, $this->direction);
+        } else {
+            $query->orderBy($by, $this->direction->value);
+        }
+
+        if ($by !== $key) {
             $query->orderBy($key, $this->direction->value);
         }
     }

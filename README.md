@@ -54,6 +54,7 @@ listing's own keys: a filter key that is one, or nests under one (`page.size`), 
 | `Listing::for($query, $request = null)` | a listing of an Eloquent query or relation |
 | `int()`, `text()`, `flag()`, `enum()`, `enums()`, `ints()`, `search()`, `date()` | add a filter: [Filters](#filters) |
 | `sorts(...$columns)`, `defaultSort($sort)` | the names `?sort=` may use, and the order otherwise: [Sorts](#sorts) |
+| `sortsByCase($name, Enum::class, $column = null)` | a name that orders an enum column by its cases: [Sorts](#sorts) |
 | `when()`, `unless()` | Laravel's `Conditionable`, to declare a filter or sort on a condition |
 | `paginate()`, `simplePaginate()`, `cursorPaginate()` | the page of rows: [Paging](#paging) |
 | `apply()` | the filtered, sorted query without paging |
@@ -127,6 +128,25 @@ Each `sorts()` call adds names, so a sort can depend on the user (a name given a
 ```php
 ->when($user->isAdmin(), fn (Listing $listing) => $listing->sorts('margin'))
 ```
+
+`sortsByCase()` adds a name that orders an enum column by its cases as the enum declares them, so a list of ad spaces
+reads top to bottom rather than alphabetically:
+
+```php
+Listing::for(Ad::query())
+    ->enum('ad_space', AdSpace::class)
+    ->sortsByCase('ad_space', AdSpace::class)
+    ->defaultSort('ad_space');
+```
+
+- Ascending is the declared order; a value no case holds, or null, comes after them all. Descending reverses the whole
+  order, those first.
+- The column defaults to the name on the model's table. A name given again, to `sorts()` or `sortsByCase()`, takes the
+  new order.
+- It orders by `CASE column WHEN ? THEN 0 … END`, which no index serves: keep it to small tables or narrow filters.
+- A listing that declares one pages with `paginate()` or `simplePaginate()`; `cursorPaginate()` throws, as a position
+  is no column a cursor can hold.
+- It throws on an enum that is not backed.
 
 Any other `?sort=` gives `defaultSort()`, else the model's key, descending. The sort replaces any order the query had,
 a relation's own `latest()` included, and ties order by the key in the same direction. Index each sortable column; on
@@ -244,6 +264,10 @@ DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_DATABASE=listing DB_USERNAME=postgres D
 Before a release, run a mutation pass on SQLite and PostgreSQL: revert each guard, and some test must fail.
 
 ## Upgrading
+
+### From 0.6.4
+
+- Nothing to change: 0.7 adds `sortsByCase()` ([Sorts](#sorts)).
 
 ### From 0.6.3
 

@@ -58,7 +58,7 @@ final class Listing
     /** The resolved `?sort=`, such as `-created_at`, for the form's hidden input. */
     public private(set) string $sort;
 
-    /** @var array<string, string> sort name => column */
+    /** @var array<string, string|CaseOrder> sort name => column, or an enum column in its cases' order */
     private array $sorts = [];
 
     /** @var array<string, Filter> */
@@ -213,6 +213,21 @@ final class Listing
         return $this;
     }
 
+    /**
+     * Adds a name `?sort=` may use that orders an enum column by its cases' declared order, ascending; a value no case
+     * holds, or null, comes after them all, and descending reverses the whole order. No index serves it. The column
+     * defaults to $name on the model's table; a name given again takes its new order.
+     *
+     * @param  class-string<BackedEnum>  $enum
+     */
+    public function sortsByCase(string $name, string $enum, ?string $column = null): static
+    {
+        $this->sorts[$name] = CaseOrder::of($enum, $column ?? $this->qualify($name));
+        $this->resolveSort();
+
+        return $this;
+    }
+
     /** `-created_at` for newest first; without it, the model's key descending. */
     public function defaultSort(string $sort): static
     {
@@ -267,11 +282,16 @@ final class Listing
 
     /**
      * A cursor the sort or column cannot take (SQLSTATE class 22) shows the first page; other database errors throw.
+     * A listing with a sortsByCase() sort throws: an order by position has no column for a cursor to hold.
      *
      * @return CursorPaginator<int, TModel>
      */
     public function cursorPaginate(?int $perPage = null): CursorPaginator
     {
+        if (array_any($this->sorts, static fn (string|CaseOrder $by): bool => $by instanceof CaseOrder)) {
+            throw new LogicException('A listing with a sortsByCase() sort pages with paginate() or simplePaginate().');
+        }
+
         $perPage = $this->perPage($perPage);
         $cursor = $this->request->query(self::CURSOR);
 

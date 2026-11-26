@@ -11,7 +11,11 @@ use Listing\Listing;
 use Listing\Tests\Fixtures\Category;
 use Listing\Tests\Fixtures\Member;
 use Listing\Tests\Fixtures\Product;
+use Listing\Tests\Fixtures\Pure;
+use Listing\Tests\Fixtures\Shelf;
+use Listing\Tests\Fixtures\Status;
 use Listing\Tests\Fixtures\Team;
+use LogicException;
 
 final class SortingTest extends TestCase
 {
@@ -171,5 +175,86 @@ final class SortingTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         Listing::for(Product::query(), Request::create('/'))->sorts('price')->sortUrl('name');
+    }
+
+    /** Desk bottom (id 1), Floor none (id 2), Wall top (id 3), Table middle (id 4), Lamp 'attic' (id 5), no case's. */
+    private function seedShelves(): void
+    {
+        foreach ([['Desk', 'bottom'], ['Floor', null], ['Wall', 'top'], ['Table', 'middle'], ['Lamp', 'attic']] as [$name, $shelf]) {
+            Product::create(['name' => $name, 'shelf' => $shelf]);
+        }
+    }
+
+    public function test_a_case_sort_orders_by_the_enums_declared_cases_then_the_rest_by_key(): void
+    {
+        $this->seedShelves();
+
+        $ascending = $this->listing('sort=shelf')->sortsByCase('shelf', Shelf::class);
+        $this->assertSame(['Wall', 'Table', 'Desk', 'Floor', 'Lamp'], $this->names($ascending));
+        $this->assertSame('shelf', $ascending->sort);
+
+        $this->assertSame(['Lamp', 'Floor', 'Desk', 'Table', 'Wall'], $this->names($this->listing('sort=-shelf')->sortsByCase('shelf', Shelf::class)));
+    }
+
+    public function test_a_case_sort_serves_as_the_default_and_on_another_column(): void
+    {
+        $this->seedShelves();
+
+        $default = $this->listing()->sortsByCase('shelf', Shelf::class)->defaultSort('shelf');
+        $this->assertSame(['Wall', 'Table', 'Desk', 'Floor', 'Lamp'], $this->names($default));
+
+        $named = $this->listing('sort=place')->sortsByCase('place', Shelf::class, 'products.shelf');
+        $this->assertSame(['Wall', 'Table', 'Desk', 'Floor', 'Lamp'], $this->names($named));
+    }
+
+    public function test_an_int_backed_case_sort_orders_by_its_cases(): void
+    {
+        foreach ([['Desk', 1], ['Floor', null], ['Wall', 0]] as [$name, $status]) {
+            Product::create(['name' => $name, 'status' => $status]);
+        }
+
+        $this->assertSame(['Wall', 'Desk', 'Floor'], $this->names($this->listing('sort=status')->sortsByCase('status', Status::class)));
+    }
+
+    public function test_a_name_given_again_swaps_a_case_sort_and_a_column_sort(): void
+    {
+        $this->seedShelves();
+
+        // Where a column sort puts NULL is each database's own (last on PostgreSQL), so Floor's is left out.
+        $byColumn = $this->listing('sort=shelf')->sortsByCase('shelf', Shelf::class)->sorts('shelf');
+        $this->assertSame(['Lamp', 'Desk', 'Table', 'Wall'], $byColumn->apply()->whereNotNull('shelf')->pluck('name')->all());
+
+        $byCase = $this->listing('sort=shelf')->sorts('shelf')->sortsByCase('shelf', Shelf::class);
+        $this->assertSame(['Wall', 'Table', 'Desk', 'Floor', 'Lamp'], $this->names($byCase));
+    }
+
+    public function test_a_case_sort_pages_and_counts_and_its_header_links(): void
+    {
+        $this->seedShelves();
+
+        $listing = $this->listing('sort=shelf')->sortsByCase('shelf', Shelf::class);
+
+        $page = $listing->paginate(2);
+        $this->assertSame(5, $page->total());
+        $this->assertSame(['Wall', 'Table'], $page->getCollection()->pluck('name')->all());
+        $this->assertSame(['Desk', 'Floor'], $this->listing('sort=shelf&page=2')->sortsByCase('shelf', Shelf::class)->simplePaginate(2)->getCollection()->pluck('name')->all());
+        $this->assertSame('http://localhost/products?sort=-shelf', $listing->sortUrl('shelf'));
+        $this->assertSame('ascending', $listing->ariaSort('shelf'));
+    }
+
+    public function test_a_case_sort_on_an_enum_that_is_not_backed_throws(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('is not a backed enum.');
+
+        $this->listing()->sortsByCase('shelf', Pure::class); // @phpstan-ignore argument.type
+    }
+
+    /** A cursor holds each row's sort column; a position has none, so a cursor screen must not offer one. */
+    public function test_a_listing_with_a_case_sort_refuses_cursor_paging(): void
+    {
+        $this->expectException(LogicException::class);
+
+        $this->listing('sort=price')->sorts('price')->sortsByCase('shelf', Shelf::class)->cursorPaginate(2);
     }
 }
